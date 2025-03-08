@@ -1,0 +1,140 @@
+#!/bin/sh
+
+# Version: 1
+# Description:
+#     This hook script will do static check with CppCheck and do indent with AStyle for changed files
+#     when developers execute git commit.
+#     Cppcheck will scan changed/new files in repository. If it finds some issues, script returns with exit code
+#     1, rejecting commit. Otherwise, script returns 0, and you can actually commit your changes after indented
+#     with AStyle.
+#
+# Usage:
+#     Add this file to your project's .git/hooks directory, rename it to just 'pre-commit', install CppCheck &
+#     AStyle 3.1 on your system and add their binary pathes to system PATH environment variable.
+#
+# Change Log:
+#     2024-03-13 V1: Initial import for Nuwa repo
+
+ignore_repo_list="ameba_tools|cmsis|image_scripts|manifest|misc_tools"
+ignore_component_list="trusted-firmware-m|third_party|cmsis"
+
+os=`uname -s`
+repo_url=`git remote -v | cut -f 2 | cut -d' ' -f 1 | head -n 1`
+repo_name=`basename $repo_url`
+hook_dir=.git/hooks
+
+care_repo=`echo "$repo_name" | grep -v -E "$ignore_repo_list"`
+if [ "X$care_repo" = "X" ]; then
+	echo "Static check & indent skipped"
+	exit 0
+fi
+
+if ! command -v astyle &> /dev/null
+then
+	echo "Astyle not exist, please download and install Astyle by following this link"
+	echo "https://sourceforge.net/projects/astyle/files/astyle/astyle%203.1/AStyle_3.1_windows.zip/download"
+	exit 1
+fi
+
+if ! command -v cppcheck &> /dev/null
+then
+	echo "CppCheck not exist, please download and install cppcheck by following this link"
+	echo "https://github.com/danmar/cppcheck/releases/download/2.3/cppcheck-2.3-x64-Setup.msi"
+	exit 1
+fi
+
+# used for zephyr source code
+if ! command -v clang-format &> /dev/null
+then
+	echo "clang-format not exist, please exec 'source ${your_nuwa_folder_path}/.venv/bin/activate'"
+	exit 1
+fi
+
+if [ ! -e ".git/" ]; then
+	echo "Please commit at the root directory of repo '$repo_name'"
+	exit 1
+fi
+
+if [ ! -e "$hook_dir/commit-msg" ]; then
+        echo "Git hook commit-msg missing"
+        exit 1
+fi
+
+if git rev-parse --verify HEAD >/dev/null 2>&1
+then
+	against=HEAD
+else
+	# Initial commit: diff against an empty tree object
+	against=$(git hash-object -t tree /dev/null)
+fi
+
+changed_files=
+# Get modified C source files
+if [ "$repo_name" = "hal_realtek_ameba" ]; then
+	changed_files=$(git diff-index --cached $against |
+		grep -E '[MA]	.*\.(c|h)$' |
+		grep -v 'common/wifi/source/driver/include/rtw_romfunc_parms.h' |
+		grep -v 'common/wifi/source/driver/include/rtw_adapter.h' |
+		grep -v 'ameba.*/\(atf\|cmsis\|cmsis-dsp\)/' |
+		grep -v 'ameba.*/fwlib/ap_core/xlat_table/' |
+		grep -v -E "$ignore_component_list" |
+		cut -f 2)
+else
+	changed_files=$(git diff-index --cached $against |
+		grep -E '[MA]	.*\.(c|h)$' |
+		grep -v '\(tests\|samples\)/drivers/' |
+		grep -v -E "$ignore_component_list" |
+		cut -f 2)
+fi
+
+# Static check with CppCheck
+# Pass only added or modified specific C source files to CppCheck.
+if [ -n "$changed_files" ]; then
+	if [ "$repo_name" = "zephyr" ]; then
+		cppcheck --error-exitcode=1 --force --inline-suppr --suppress=unknownMacro --enable=warning,performance,portability $changed_files
+		err=$?
+	else
+		cppcheck --error-exitcode=1 --force --inline-suppr --suppressions-list=$hook_dir/suppression.txt --enable=warning,performance,portability $changed_files
+		err=$?
+	fi
+	if [ $err -ne 0 ]; then
+		echo "Static check done, error(s) detected"
+		exit $err
+	else
+		echo "Static check done, no error detected"
+	fi
+else
+	echo "Static check skipped"
+fi
+
+# Indent with Astyle
+if [ -n "$changed_files" ]; then
+	echo
+	echo 'Indent changed files: '
+	for f in $changed_files
+	do
+		echo $f
+	done
+	# Only for AStyle 3.1
+	if [ "$repo_name" = "zephyr" ]; then
+		clang-format -i $changed_files
+		set -e exec
+		# $PWD is zephyr folder absolute path, here use .
+		exec git diff --cached | ./scripts/checkpatch.pl -
+		err=$?
+		if [ $err -ne 0 ]; then
+			echo "Coding Style check done, error(s) detected"
+			exit $err
+		else
+			echo "Coding Style check done, no error detected"
+		fi
+	else
+		astyle --style=linux -p -xg -H -U -k3 -j -xC160 -xL -T4 -z2 -n -q $changed_files
+	fi
+	git add $changed_files
+else
+	echo "Indent skipped"
+fi
+
+echo "Commit check done, no error detected"
+exit 0

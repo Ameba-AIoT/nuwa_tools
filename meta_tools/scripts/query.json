@@ -1,0 +1,62 @@
+{
+    "info": {
+        "brief": "Realtek Nuwa Zephyr SDK",
+        "soc": "Ameba",
+        "os": "Zephyr",
+        "vcs": "west",
+        "meta": "nuwa.py",
+	"debuggerArgs": null,
+        "overrideLaunchCommands": [
+            "mem 0xaaaaaaaa 0xaaaaaaab none",
+            "set mem inaccessible-by-default off",
+            "monitor reset 0",
+            "monitor sleep 20",
+            "monitor reset 0",
+            "monitor sleep 20",
+            "flushregs"
+        ]
+    },
+    "apps": {
+        "include": [
+            "applications",
+            "zephyr/samples"
+        ],
+        "exclude": [
+            "zephyr/samples/arch/smp",
+            "zephyr/samples/boards",
+            "zephyr/samples/drivers/ethernet",
+            "zephyr/samples/drivers/fpga",
+            "zephyr/samples/drivers/ht16k33",
+            "zephyr/samples/drivers/ipm",
+            "zephyr/samples/drivers/mbox",
+            "zephyr/samples/drivers/ps2",
+            "zephyr/samples/drivers/soc_flash_nrf",
+            "zephyr/samples/fuel_gauge",
+            "zephyr/samples/sensor",
+            "zephyr/samples/shields",
+            "zephyr/samples/subsys/ipc"
+        ]
+    },
+    "devices": {
+        "rtl872xda_evb": {
+            "chip": "AmebaDplus",
+            "path": "zephyr/boards/arm/rtl872xda_evb"
+        },
+        "rtl872xd_evb": {
+            "chip": "AmebaD",
+            "path": "zephyr/boards/arm/rtl872xd_evb"
+        }
+    },
+    "chips": {
+        "AmebaDplus": {
+	    "core": "Cortex-M33",
+            "toolchain": "asdk-10.3.1",
+	    "jlinkScript": "amebadplus/AP2_KM4.JLinkScript"
+        },
+        "AmebaD": {
+            "core": "Cortex-M33",
+                "toolchain": "asdk-10.3.1",
+            "jlinkScript": "amebad/AP2_KM4.JLinkScript"
+        }
+    }
+}
