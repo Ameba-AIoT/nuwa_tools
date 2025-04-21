@@ -7,7 +7,7 @@
 import os
 import sys
 import argparse
-import ast
+import base64
 
 from base import *
 import version_info
@@ -17,22 +17,24 @@ MinSupportedDeviceProfileMinorVersion = 1
 setting_file = "Setting.json"
 
 
-def parse_string_as_dict_list(value):
-    dict_list = []
-    try:
-        parsed_value = ast.literal_eval(value)
-        if isinstance(parsed_value, list):
-            for parsed_dict in parsed_value:
-                if isinstance(parsed_dict, dict):
-                    dict_list.append(parsed_dict)
-                else:
-                    raise argparse.ArgumentTypeError(f"Expected dict element in list, got {type(parsed_dict).__name__}")
-        else:
-            raise argparse.ArgumentTypeError(f"Expected a list, got {type(parsed_value).__name__}")
-    except (ValueError, SyntaxError) as err:
-        raise argparse.ArgumentTypeError("Invalid list format") from err
+def sys_exit(logger, status, ret):
+    if status:
+        logger.info(f"Finished PASS")  # customized, do not modify
+        sys.exit(0)
+    else:
+        logger.error(f"Finished FAIL: {ret}")  # customized, do not modify
+        sys.exit(1)
 
-    return dict_list
+
+def decoder_partition_string(partition_table_base64):
+    try:
+        if partition_table_base64 is None:
+            return None
+        partition_value = base64.b64decode(partition_table_base64).decode("utf-8")
+        partition_list = json.loads(partition_value)
+        return partition_list
+    except Exception as err:
+        raise argparse.ArgumentTypeError("Invalid partition table format with base64") from err
 
 
 def main(argc, argv):
@@ -52,9 +54,9 @@ def main(argc, argv):
     parser.add_argument('-o', '--log-file', type=str, help='output log file with path')
     parser.add_argument('-v', '--version', action='version', version=f'%(prog)s {version_info.version}')
 
-    parser.add_argument('--chip-erase', action='store_true', help='chip erase option for download')
+    parser.add_argument('--chip-erase', action='store_true', help='chip erase')
     parser.add_argument('--log-level', default='info', help='log level')
-    parser.add_argument('--partion-table', type=parse_string_as_dict_list, help="layout info, list")
+    parser.add_argument('--partition-table', help="layout info, list")
 
     args = parser.parse_args()
     download = args.download
@@ -71,7 +73,7 @@ def main(argc, argv):
     end_addr = args.end_address
     size = args.size
     mem_t = args.memory_type
-    partion_table = args.partion_table
+    partition_table = decoder_partition_string(args.partition_table)
 
     if mem_t is not None:
         if mem_t == "nand":
@@ -123,15 +125,15 @@ def main(argc, argv):
 
     if all([download, erase]):
         logger.warning("Download and erase are set true, only do image download ")
-    elif not (download or erase):
-        logger.error("Download or erase should be set")
+    elif not (download or erase or chip_erase):
+        logger.error("Download or erase or chip-erase should be set")
         sys.exit(1)
 
     memory_info = None
     images_info = None
     if download:
         # download
-        if (image is None) and (image_dir is None):
+        if (image is None) and (image_dir is None) and (partition_table is None):
             logger.error('Invalid arguments, no image or image_dir input')
             parser.print_usage()
             sys.exit(1)
@@ -156,7 +158,7 @@ def main(argc, argv):
                 start_address = int(start_addr, 16)
             except Exception as err:
                 logger.error(f"Start address is invalid: {err}")
-                sys.exit(-1)
+                sys.exit(1)
             download_img_info.start_address = start_address
 
             if memory_type == MemoryInfo.MEMORY_TYPE_NAND:
@@ -168,20 +170,20 @@ def main(argc, argv):
                     end_address = int(end_addr, 16)
                 except Exception as err:
                     logger.error(f"End address is invalid: {err}")
-                    sys.exit(-1)
+                    sys.exit(1)
             else:
                 end_address = start_address + os.path.getsize(image)
 
-            download_img_info.end_address = start_address + os.path.getsize(image)
+            download_img_info.end_address = end_address
             download_img_info.memory_type = memory_type
+            download_img_info.mandatory = True
             images_info = [download_img_info]
-
-            logger.info(f'Image info:')
-            for img_info in images_info:
-                for key, value in img_info.__repr__().items():
-                    if key == "ImageName":
-                        key = "Image"
-                    logger.info(f'> {key}: {value}')
+        elif partition_table is not None:
+            images_info = []
+            for img_info in partition_table:
+                img_json = ImageInfo(**img_info)
+                img_json.description = os.path.basename(img_json.image_name)
+                images_info.append(img_json)
         else:
             images_info = None
             if not os.path.exists(image_dir):
@@ -189,58 +191,69 @@ def main(argc, argv):
                 sys.exit(1)
 
             logger.info(f'Image dir: {image_dir}')
-
-        if chip_erase:
-            logger.info(f"Chip erase: {chip_erase}")
-            if memory_type is None:
-                logger.warning("Memory type is required for chip erase")
-                sys.exit(1)
-            if memory_type != MemoryInfo.MEMORY_TYPE_NOR:
-                logger.warning("Memory type should be 'nor' for chip erase")
-        else:
-            logger.info(f"Chip erase: False")
+        if images_info:
+            logger.info(f'Image info:')
+            for img_info in images_info:
+                for key, value in img_info.__repr__().items():
+                    if key == "ImageName":
+                        key = "Image"
+                    logger.info(f'> {key}: {value}')
     else:
         # erase
-        memory_info = MemoryInfo()
-        if start_addr is None:
-            logger.error(f"Start address is required for erase flash")
-            sys.exit(1)
-
-        try:
-            start_address = int(start_addr, 16)
-        except Exception as err:
-            logger.error(f"Start address is invalid: {err}")
-            sys.exit(-1)
-        memory_info.start_address = start_address
-
-        if memory_type is None:
-            logger.error("Memory type is required for erase")
-            sys.exit(1)
-
-        memory_info.memory_type = memory_type
-
-        if memory_type == MemoryInfo.MEMORY_TYPE_NAND:
-            if end_addr is None:
-                logger.error(f"End address is required for nand flash download")
+        if all([chip_erase, erase]):
+            logger.warning(f"Both chip erase and erase are enabled, do chip erase only")
+        if not chip_erase:
+            memory_info = MemoryInfo()
+            if start_addr is None:
+                logger.error(f"Start address is required for erase flash")
                 sys.exit(1)
 
-        if end_addr:
             try:
-                end_address = int(end_addr, 16)
+                start_address = int(start_addr, 16)
             except Exception as err:
-                logger.error(f"End address is invalid: {err}")
-                sys.exit(-1)
-        else:
-            end_address = 0
+                logger.error(f"Start address is invalid: {err}")
+                sys.exit(1)
+            memory_info.start_address = start_address
 
-        if size is None:
-            logger.error(f"Erase size is required")
-            sys.exit(-1)
-        memory_info.size_in_Kbyte = size
+            if memory_type is None:
+                logger.error("Memory type is required for erase")
+                sys.exit(1)
 
-        if end_address == 0:
-            end_address = start_address + size
-        memory_info.end_address = end_address
+            memory_info.memory_type = memory_type
+
+            if memory_type == MemoryInfo.MEMORY_TYPE_NAND:
+                if end_addr is None:
+                    logger.error(f"End address is required for nand flash download")
+                    sys.exit(1)
+            else:
+                if size is None:
+                    logger.error(f"Erase size is required")
+                    sys.exit(1)
+
+            if end_addr:
+                try:
+                    end_address = int(end_addr, 16)
+                except Exception as err:
+                    logger.error(f"End address is invalid: {err}")
+                    sys.exit(1)
+            else:
+                end_address = 0
+
+            memory_info.size_in_kbyte = size
+
+            if end_address == 0:
+                end_address = start_address + size
+            memory_info.end_address = end_address
+
+    if chip_erase:
+        logger.info(f"Chip erase: {chip_erase}")
+        if memory_type is None:
+            logger.warning("Memory type is required for chip erase")
+            sys.exit(1)
+        if memory_type != MemoryInfo.MEMORY_TYPE_NOR:
+            logger.warning("Memory type should be 'nor' for chip erase")
+    else:
+        logger.info(f"Chip erase: False")
 
     # check device profile
     try:
@@ -261,11 +274,16 @@ def main(argc, argv):
 
     # check serial port
     try:
-        port = serial.Serial(serial_port,
-                             baudrate=profile_info.handshake_baudrate,
-                             parity=serial.PARITY_NONE,
-                             stopbits=serial.STOPBITS_ONE,
-                             bytesize=serial.EIGHTBITS)
+        # create an empty port-object, then assign port info to object, to avoid dtr/rts level changes when open/close port
+        port = serial.Serial()
+        port.port = serial_port
+        port.baudrate = profile_info.handshake_baudrate
+        port.parity = serial.PARITY_NONE
+        port.stopbits = serial.STOPBITS_ONE
+        port.bytesize = serial.EIGHTBITS
+        port.dtr = False
+        port.rts = False
+        port.open()
     except Exception as err:
         logger.error(f"Access serial port {serial_port} fail: {err}")
         sys.exit(1)
@@ -303,75 +321,89 @@ def main(argc, argv):
     if download:
         # download
         if not ameba.check_protocol_for_download():
-            if port.is_open:
-                port.close()
-                logger.info(f"{port.port} closed.")
-            sys.exit(-1)
+            ret = ErrType.SYS_PROTO
+            sys_exit(logger, False, ret)
 
-        logger.info(f"Image download start...")
+        logger.info(f"Image download start...")  # customized, do not modify
         ret = ameba.prepare()
         if ret != ErrType.OK:
             logger.error("Download prepare fail")
-            if port.is_open:
-                port.close()
-                logger.info(f"{port.port} closed.")
-            logger.error(f"Finished FAIL: {ret}")  # customized, do not modify
-            sys.exit(-1)
+            sys_exit(logger, False, ret)
 
-        ret = ameba.post_verify_images()
+        ret = ameba.check_supported_flash_size()
         if ret != ErrType.OK:
-            if port.is_open:
-                port.close()
-                logger.info(f"{port.port} closed.")
-            logger.error(f"Finished FAIL: {ret}")  # customized, do not modify
-            sys.exit(-1)
+            logger.error(f"Check supported flash size fail")
+            sys_exit(logger, False, ret)
+
+        ret = ameba.verify_images()
+        if ret != ErrType.OK:
+            sys_exit(logger, False, ret)
+
+        if not ameba.is_all_ram:
+            ret = ameba.post_verify_images()
+            if ret != ErrType.OK:
+                sys_exit(logger, False, ret)
+
+        if not ameba.is_all_ram:
+            flash_status = FlashBPS()
+            ret = ameba.check_and_process_flash_lock(flash_status)
+            if ret != ErrType.OK:
+                logger.error("Download image fail")
+                sys_exit(logger, False, ret)
 
         ret = ameba.download_images()
         if ret != ErrType.OK:
             logger.error("Download image fail")
-            if port.is_open:
-                port.close()
-                logger.info(f"{port.port} closed.")
-            logger.error(f"Finished FAIL: {ret}")  # customized, do not modify
-            sys.exit(-1)
+            sys_exit(logger, False, ret)
+
+        if (not ameba.is_all_ram) and flash_status.need_unlock:
+            logger.info("Restore the flash block protection...")
+            ret = ameba.lock_flash(flash_status.protection)
+            if ret != ErrType.OK:
+                logger.error(f"Fail to restore the flash block protection")
+                sys_exit(logger, False, ret)
     else:
         # erase
-        logger.info(f"Erase {mem_t} start...")
         ret = ameba.prepare()
         if ret != ErrType.OK:
             logger.error("Erase prepare fail")
-            if port.is_open:
-                port.close()
-                logger.info(f"{port.port} closed.")
-            logger.error(f"Finished FAIL: {ret}")  # customized, do not modify
-            sys.exit(-1)
+            sys_exit(logger, False, ret)
+
+        if chip_erase:
+            ret = ameba.erase_flash_chip()
+            if ret != ErrType.OK:
+                logger.error("Chip erase fail")
+                sys_exit(logger, False, ret)
+            sys_exit(logger, True, ret)
+
+        ret = ameba.validate_config_for_erase()
+        if ret != ErrType.OK:
+            sys_exit(logger, False, ret)
 
         ret = ameba.post_validate_config_for_erase()
         if ret != ErrType.OK:
-            if port.is_open:
-                port.close()
-                logger.info(f"{port.port} closed.")
-            logger.error(f"Finished FAIL: {ret}")  # customized, do not modify
-            sys.exit(-1)
+            sys_exit(logger, False, ret)
+
+        if (not profile_info.is_ram_address(memory_info.start_address)):
+            flash_status = FlashBPS()
+            ret = ameba.check_and_process_flash_lock(flash_status)
+            if ret != ErrType.OK:
+                logger.error("Erase fail")
+                sys_exit(logger, False, ret)
 
         ret = ameba.erase_flash()
         if ret != ErrType.OK:
-            if port.is_open:
-                port.close()
-                logger.info(f"{port.port} closed.")
             logger.error(f"Erase {mem_t} failed")
-            logger.error(f"Finished FAIL: {ret}")  # customized, do not modify
-            sys.exit(-1)
+            sys_exit(logger, False, ret)
 
-    if port.is_open:
-        port.close()
-    while port.is_open:
-        pass
-    if not port.is_open:
-        logger.info(f"{port.port} closed.")
+        if (not profile_info.is_ram_address(memory_info.start_address)) and flash_status.need_unlock:
+            logger.info("Restore the flash block protection...")
+            ret = ameba.lock_flash(flash_status.protection)
+            if ret != ErrType.OK:
+                logger.error(f"Fail to restore the flash block protection")
+                sys_exit(logger, False, ret)
 
-    logger.info(f"Finished PASS")  # customized, do not modify
-    sys.exit(0)
+    sys_exit(logger, True, ret)
 
 
 if __name__ == "__main__":

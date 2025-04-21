@@ -11,18 +11,20 @@ import os
 import shutil
 import subprocess
 import sys
+from typing import Dict, List
 import venv
 
 NUWA_SDK_VENV_DIR = '.venv'
+VENV_PYTHON_EXECUTABLE = os.path.join(NUWA_SDK_VENV_DIR, 'bin', 'python')
 NUWA_SDK_ZEPHYR_REQUIREMENTS_PATH = 'zephyr/scripts/requirements.txt'
 NUWA_SDK_NUWA_REQUIREMENTS_PATH = 'tools/requirements.txt'
 NUWA_SDK_GIT_HOOKS_DIR = 'tools/meta_tools/git_hooks'
 
-CMD_WEST_UPDATE = 'west update'
-CMD_WEST_LIST = "west list | awk '{print $2}'"
-CMD_INSTALL_ZEPHYR_REQUIREMENTS = 'pip install -r ' + NUWA_SDK_ZEPHYR_REQUIREMENTS_PATH
-CMD_INSTALL_NUWA_REQUIREMENTS = 'pip install -r ' + NUWA_SDK_NUWA_REQUIREMENTS_PATH
-CMD_CLEAN_WORKSPACE = "west forall -c 'git reset --hard && git clean -fd'"
+CMD_WEST_UPDATE = f"{VENV_PYTHON_EXECUTABLE} -m west update"
+CMD_WEST_LIST = f"{VENV_PYTHON_EXECUTABLE} -m west list | awk '{{print $2}}'"
+CMD_INSTALL_ZEPHYR_REQUIREMENTS = f"{VENV_PYTHON_EXECUTABLE}  -m pip install -r {NUWA_SDK_ZEPHYR_REQUIREMENTS_PATH}"
+CMD_INSTALL_NUWA_REQUIREMENTS = f"{VENV_PYTHON_EXECUTABLE} -m pip install -r {NUWA_SDK_NUWA_REQUIREMENTS_PATH}"
+CMD_CLEAN_WORKSPACE = f"{VENV_PYTHON_EXECUTABLE} -m west forall -c 'git reset --hard && git clean -fd'"
 
 def check_venv():
     print("Check Python virtual environment...")
@@ -32,38 +34,64 @@ def check_venv():
         # Create virtual environment if it does not exist
         try:
             print("Python virtual environment does not exist")
-            venv.create(NUWA_SDK_VENV_DIR)
+            venv.create(NUWA_SDK_VENV_DIR, with_pip=True)
             print("Python virtual environment created")
         except:
             print("Error: Fail to create Python virtual environment")
             sys.exit(2)
+    # install pip and west no matter they exist or not
+    env = os.environ.copy()
+    env['PYTHONNOUSERSITE'] = 'True'
+    python_executable = os.path.join(NUWA_SDK_VENV_DIR, 'bin', 'python')
+    subprocess.check_call([python_executable, '-m', 'ensurepip'], env=env)
+    subprocess.check_call([python_executable, '-m', 'pip', 'install', 'west'], env=env)
+    
 
 def run_shell_cmd_with_output(cmd):
     return subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 
-def update_git_hooks():
-    repo_list = run_shell_cmd_with_output(CMD_WEST_LIST)
-    if repo_list.returncode != 0:
-        print("Error: Fail to get west repo list, please check the west environment")
-        sys.exit(2)
-    else:
-        pass
-
-    for repo in repo_list.stdout.strip().split('\n'):
-        target_dir = os.path.join(repo, '.git', 'hooks')
-        if os.path.exists(target_dir):
-            hooks = glob.glob(NUWA_SDK_GIT_HOOKS_DIR + "/*")
-            for hook in hooks:
-                if os.path.isdir(hook):
-                    pass
-                elif os.path.isfile(hook):
-                    shutil.copy(hook, target_dir)
-                    os.system("chmod a+x " + os.path.join(target_dir, os.path.basename(hook)))
-                else:
-                    pass
+def update_git_hooks(cmd):
+    rc = 0
+    
+    try:
+        repo_list = run_shell_cmd_with_output(cmd)
+        if repo_list.returncode != 0:
+            print("Error: Fail to get west repo list, please check the west environment")
+            rc = 1
         else:
-            print("Error: Repo '" + repo + "' damaged, no .git directory found")
-            sys.exit(2)
+            for repo in repo_list.stdout.strip().split('\n'):
+                target_dir = os.path.join(repo, '.git', 'hooks')
+                if os.path.exists(target_dir):
+                    hooks = glob.glob(NUWA_SDK_GIT_HOOKS_DIR + "/*")
+                    for hook in hooks:
+                        if os.path.isdir(hook):
+                            pass
+                        elif os.path.isfile(hook):
+                            shutil.copy(hook, target_dir)
+                            os.system("chmod a+x " + os.path.join(target_dir, os.path.basename(hook)))
+                        else:
+                            pass
+                else:
+                    print("Error: Repo '" + repo + "' damaged, no .git directory found")
+                    rc = 1
+                    break
+    except:
+        rc = 1
+
+    return rc
+
+def run_commands(commands: List[str], env: Dict[str, str]) -> int:
+    """Helper function to run multiple shell commands within a session."""
+    try:
+        with subprocess.Popen(['/bin/bash'], stdin=subprocess.PIPE, env=env, text=True) as proc:
+            for cmd in commands:
+                proc.stdin.write(cmd + '\n')
+            proc.stdin.close()
+            rc = proc.wait()
+            return rc
+    except subprocess.CalledProcessError as e:
+        print(f"Error: Command failed with exit code {e.returncode}")
+        sys.exit(e.returncode)
 
 def main(argc, argv):
     parser = argparse.ArgumentParser(description=None)
@@ -74,40 +102,36 @@ def main(argc, argv):
 
     print("Set up...")
 
+    if args.pristine and os.path.exists(".venv"):
+        print("Remove existing .venv folder...")
+        shutil.rmtree(".venv")
+
+    check_venv()
+
     if args.pristine:
         print("Clean workspace...")
-        os.system(CMD_CLEAN_WORKSPACE)
+        try:
+            rc = os.system(CMD_CLEAN_WORKSPACE)
+        except:
+            print("Error: Clean workspace failed")
+            sys.exit(2)
         print("Clean workspace done")
     else:
         pass
 
-    # Check virtual environment
-    check_venv()
-    
-    cmd = ''
-    cmd_activate_venv = None
-    cmd_deactivate_venv = None
-    if os.name == 'nt':
-        cmd_activate_venv = os.path.join(NUWA_SDK_VENV_DIR, 'Scripts', 'activate.bat')
-        cmd_deactivate_venv = os.path.join(NUWA_SDK_VENV_DIR, 'Scripts', 'deactivate.bat')
-    else:
-        cmd_activate_venv = 'source ' + os.path.join(NUWA_SDK_VENV_DIR, 'bin', 'activate')
-        cmd_deactivate_venv = 'deactivate'
-    
-    cmd += cmd_activate_venv + ' && '
-    cmd += 'echo "Update workspace..." && ' + CMD_WEST_UPDATE + ' && echo "Update workspace done" && '
-    cmd += 'echo "Install Zephyr requirements..." && ' + CMD_INSTALL_ZEPHYR_REQUIREMENTS + ' && echo "Install Zephyr requirements done" && '
-    cmd += 'echo "Install Nuwa requirements..." && ' + CMD_INSTALL_NUWA_REQUIREMENTS + ' && echo "Install Nuwa requirements done"'
+    # This list will be execute in a session in order
+    commands = [
+        'echo "Install Zephyr requirements..."',
+        CMD_INSTALL_ZEPHYR_REQUIREMENTS,
+        'echo "Install Zephyr requirements done"',
+        'echo "Install Nuwa requirements..."',
+        CMD_INSTALL_NUWA_REQUIREMENTS,
+        'echo "Install Nuwa requirements done"'
+    ]
 
-    rc = 0
-    try:
-        rc = os.system(cmd)
-    except:
-        run_shell_cmd_with_output(cmd_deactivate_venv)
-        print("Error: Set up Nuwa SDK failed")
-        sys.exit(2)
-
-    run_shell_cmd_with_output(cmd_deactivate_venv)
+    env = os.environ.copy()
+    env['PYTHONNOUSERSITE'] = 'True'
+    rc = run_commands(commands, env)
 
     if rc != 0:
         print("Error: Set up Nuwa SDK failed (" + str(rc) + ")")
@@ -117,8 +141,12 @@ def main(argc, argv):
 
     if args.update_git_hooks:
         print("Update Git hooks...")
-        update_git_hooks()
-        print("Update Git hooks done")
+        rc = update_git_hooks(CMD_WEST_LIST)
+        if rc != 0:
+            print("Error: Update Git hooks failed (" + str(rc) + ")")
+            sys.exit(2)
+        else:
+            print("Update Git hooks done")
     else:
         pass
 

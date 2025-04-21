@@ -82,21 +82,34 @@ if [ "$repo_name" = "hal_realtek_ameba" ]; then
 else
 	changed_files=$(git diff-index --cached $against |
 		grep -E '[MA]	.*\.(c|h)$' |
-		grep -v '\(tests\|samples\)/drivers/' |
 		grep -v -E "$ignore_component_list" |
 		cut -f 2)
+fi
+
+# Only for zephyr checkpatch
+if [ "$repo_name" = "zephyr" ]; then
+	if [ -n "$changed_files" ]; then
+		clang-format -i $changed_files
+		git add $changed_files
+	fi
+	set -e exec
+	# $PWD is zephyr folder absolute path, here use .
+	exec git diff --cached | ./scripts/checkpatch.pl -
+	err=$?
+	if [ $err -ne 0 ]; then
+		echo "checkpatch check done, error(s) detected"
+		exit $err
+	else
+		echo "checkpatch check done, no error detected"
+	fi
+	exit 0
 fi
 
 # Static check with CppCheck
 # Pass only added or modified specific C source files to CppCheck.
 if [ -n "$changed_files" ]; then
-	if [ "$repo_name" = "zephyr" ]; then
-		cppcheck --error-exitcode=1 --force --inline-suppr --suppress=unknownMacro --enable=warning,performance,portability $changed_files
-		err=$?
-	else
-		cppcheck --error-exitcode=1 --force --inline-suppr --suppressions-list=$hook_dir/suppression.txt --enable=warning,performance,portability $changed_files
-		err=$?
-	fi
+	cppcheck --error-exitcode=1 --force --inline-suppr --suppressions-list=$hook_dir/suppression.txt --enable=warning,performance,portability $changed_files
+	err=$?
 	if [ $err -ne 0 ]; then
 		echo "Static check done, error(s) detected"
 		exit $err
@@ -109,28 +122,14 @@ fi
 
 # Indent with Astyle
 if [ -n "$changed_files" ]; then
-	echo
-	echo 'Indent changed files: '
-	for f in $changed_files
-	do
-		echo $f
-	done
+	# echo
+	# echo 'Indent changed files: '
+	# for f in $changed_files
+	# do
+	# 	echo $f
+	# done
 	# Only for AStyle 3.1
-	if [ "$repo_name" = "zephyr" ]; then
-		clang-format -i $changed_files
-		set -e exec
-		# $PWD is zephyr folder absolute path, here use .
-		exec git diff --cached | ./scripts/checkpatch.pl -
-		err=$?
-		if [ $err -ne 0 ]; then
-			echo "Coding Style check done, error(s) detected"
-			exit $err
-		else
-			echo "Coding Style check done, no error detected"
-		fi
-	else
-		astyle --style=linux -p -xg -H -U -k3 -j -xC160 -xL -T4 -z2 -n -q $changed_files
-	fi
+	astyle --style=linux -p -xg -H -U -k3 -j -xC160 -xL -T4 -z2 -n -q $changed_files
 	git add $changed_files
 else
 	echo "Indent skipped"

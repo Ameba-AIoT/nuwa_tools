@@ -6,7 +6,6 @@
 
 
 import argparse
-import venv
 import json
 import os
 import shutil
@@ -42,7 +41,11 @@ def check_venv():
     else:
         # Create virtual environment if it does not exist
         try:
-            venv.create(NUWA_SDK_VENV_DIR)
+            if sys.platform == "win32":
+                subprocess.check_call([sys.executable, '-m', 'virtualenv', NUWA_SDK_VENV_DIR])
+            else:
+                import venv
+                venv.create(NUWA_SDK_VENV_DIR)
         except:
             print("Error: Fail to create Python virtual environment")
             sys.exit(2)
@@ -234,8 +237,7 @@ def main(argc, argv):
         os.system(cmd)
 
         print('========== Image manipulating start ==========')
-
-        cmd = 'python "' + NUWA_SDK_AXF2BIN_SCRIPT + '" pad "' + xip_image2_bin + '" 32'
+        cmd = cmd_activate_venv + ' && ' + 'python "' + NUWA_SDK_AXF2BIN_SCRIPT + '" pad "' + xip_image2_bin + '" 32'
         os.system(cmd)
 
         cmd = 'echo "0e000020 T __flash_text_start__" > "' + target_img2_map + '" && '
@@ -244,13 +246,13 @@ def main(argc, argv):
         cmd += 'echo "20004da0 D __image2_entry_func__" >> "' + target_img2_map + '"'
         os.system(cmd)
 
-        cmd = 'python "' + NUWA_SDK_AXF2BIN_SCRIPT + '" prepend_header "' + entry_bin + '" __image2_entry_func__ "' + target_img2_map + '"'
+        cmd = cmd_activate_venv + ' && ' + 'python "' + NUWA_SDK_AXF2BIN_SCRIPT + '" prepend_header "' + entry_bin + '" __image2_entry_func__ "' + target_img2_map + '"'
         os.system(cmd)
-        cmd = 'python "' + NUWA_SDK_AXF2BIN_SCRIPT + '" prepend_header "' + sram_2_bin + '" __sram_image2_start__ "' + target_img2_map + '"'
+        cmd = cmd_activate_venv + ' && ' + 'python "' + NUWA_SDK_AXF2BIN_SCRIPT + '" prepend_header "' + sram_2_bin + '" __sram_image2_start__ "' + target_img2_map + '"'
         os.system(cmd)
-        cmd = 'python "' + NUWA_SDK_AXF2BIN_SCRIPT + '" prepend_header "' + psram_2_bin + '" __psram_image2_start__ "' + target_img2_map + '"'
+        cmd = cmd_activate_venv + ' && ' + 'python "' + NUWA_SDK_AXF2BIN_SCRIPT + '" prepend_header "' + psram_2_bin + '" __psram_image2_start__ "' + target_img2_map + '"'
         os.system(cmd)
-        cmd = 'python "' + NUWA_SDK_AXF2BIN_SCRIPT + '" prepend_header "' + xip_image2_bin + '" __flash_text_start__ "' + target_img2_map + '"'
+        cmd = cmd_activate_venv + ' && ' + 'python "' + NUWA_SDK_AXF2BIN_SCRIPT + '" prepend_header "' + xip_image2_bin + '" __flash_text_start__ "' + target_img2_map + '"'
         os.system(cmd)
 
         cmd = 'cat "' + os.path.join(target_dir, 'xip_image2_prepend.bin') + '" "' + \
@@ -268,9 +270,9 @@ def main(argc, argv):
 
         cmd = 'cat "' + km0_image2_all_bin + '" "' + km4_image2_all_bin + '" > "' + km0_km4_app_tmp_bin + '"'
         os.system(cmd)
-        cmd = 'python "' + NUWA_SDK_AXF2BIN_SCRIPT + '" cert "' + NUWA_SDK_MANIFEST_JSON + '" "' + NUWA_SDK_MANIFEST_JSON + '" "' + cert_bin + '" 0 app'
+        cmd = cmd_activate_venv + ' && ' + 'python "' + NUWA_SDK_AXF2BIN_SCRIPT + '" cert "' + NUWA_SDK_MANIFEST_JSON + '" "' + NUWA_SDK_MANIFEST_JSON + '" "' + cert_bin + '" 0 app'
         os.system(cmd)
-        cmd = 'python "' + NUWA_SDK_AXF2BIN_SCRIPT + '" manifest "' + NUWA_SDK_MANIFEST_JSON + '" "' + NUWA_SDK_MANIFEST_JSON + '" "' + km0_km4_app_tmp_bin + '" "' + manifest_bin + '" app'
+        cmd = cmd_activate_venv + ' && ' + 'python "' + NUWA_SDK_AXF2BIN_SCRIPT + '" manifest "' + NUWA_SDK_MANIFEST_JSON + '" "' + NUWA_SDK_MANIFEST_JSON + '" "' + km0_km4_app_tmp_bin + '" "' + manifest_bin + '" app'
         os.system(cmd)
 
         if os.path.exists(manifest_bin):
@@ -279,9 +281,9 @@ def main(argc, argv):
             print('Error: Fail to generate manifest.bin')
             sys.exit(1)
 
-        cmd = 'python "' + NUWA_SDK_AXF2BIN_SCRIPT + '" rsip "' + km0_image2_all_bin + '" "' + km0_image2_all_en_bin + '" 0x0c000000 "' + NUWA_SDK_MANIFEST_JSON + '" app'
+        cmd = cmd_activate_venv + ' && ' + 'python "' + NUWA_SDK_AXF2BIN_SCRIPT + '" rsip "' + km0_image2_all_bin + '" "' + km0_image2_all_en_bin + '" 0x0c000000 "' + NUWA_SDK_MANIFEST_JSON + '" app'
         os.system(cmd)
-        cmd = 'python "' + NUWA_SDK_AXF2BIN_SCRIPT + '" rsip "' + km4_image2_all_bin + '" "' + km4_image2_all_en_bin + '" 0x0e000000 "' + NUWA_SDK_MANIFEST_JSON + '" app'
+        cmd = cmd_activate_venv + ' && ' + 'python "' + NUWA_SDK_AXF2BIN_SCRIPT + '" rsip "' + km4_image2_all_bin + '" "' + km4_image2_all_en_bin + '" 0x0e000000 "' + NUWA_SDK_MANIFEST_JSON + '" app'
         os.system(cmd)
 
         if os.path.exists(km4_image3_all_en_bin):
@@ -341,11 +343,11 @@ def main(argc, argv):
 
         print('========== Image manipulating start ==========')
 
-        cmd = 'python "' + NUWA_SDK_AXF2BIN_SCRIPT + '" pad "' + xip_image2_bin + '" 32'
+        cmd = cmd_activate_venv + ' && ' + 'python "' + NUWA_SDK_AXF2BIN_SCRIPT + '" pad "' + xip_image2_bin + '" 32'
         os.system(cmd)
-        cmd = 'python "' + NUWA_SDK_AXF2BIN_SCRIPT + '" pad "' + sram_2_bin + '" 32'
+        cmd = cmd_activate_venv + ' && ' + 'python "' + NUWA_SDK_AXF2BIN_SCRIPT + '" pad "' + sram_2_bin + '" 32'
         os.system(cmd)
-        cmd = 'python "' + NUWA_SDK_AXF2BIN_SCRIPT + '" pad "' + psram_2_bin + '" 32'
+        cmd = cmd_activate_venv + ' && ' + 'python "' + NUWA_SDK_AXF2BIN_SCRIPT + '" pad "' + psram_2_bin + '" 32'
         os.system(cmd)
 
         cmd = 'echo "0e000020 T __flash_text_start__" > "' + target_img2_map + '" && '
@@ -353,11 +355,11 @@ def main(argc, argv):
         cmd += 'echo "0e000020 T __psram_image2_start__" >> "' + target_img2_map + '"'
         os.system(cmd)
 
-        cmd = 'python "' + NUWA_SDK_AXF2BIN_SCRIPT + '" prepend_header "' + sram_2_bin + '" __sram_image2_start__ "' + target_img2_map + '"'
+        cmd = cmd_activate_venv + ' && ' + 'python "' + NUWA_SDK_AXF2BIN_SCRIPT + '" prepend_header "' + sram_2_bin + '" __sram_image2_start__ "' + target_img2_map + '"'
         os.system(cmd)
-        cmd = 'python "' + NUWA_SDK_AXF2BIN_SCRIPT + '" prepend_header "' + psram_2_bin + '" __psram_image2_start__ "' + target_img2_map + '"'
+        cmd = cmd_activate_venv + ' && ' + 'python "' + NUWA_SDK_AXF2BIN_SCRIPT + '" prepend_header "' + psram_2_bin + '" __psram_image2_start__ "' + target_img2_map + '"'
         os.system(cmd)
-        cmd = 'python "' + NUWA_SDK_AXF2BIN_SCRIPT + '" prepend_header "' + xip_image2_bin + '" __flash_text_start__ "' + target_img2_map + '"'
+        cmd = cmd_activate_venv + ' && ' + 'python "' + NUWA_SDK_AXF2BIN_SCRIPT + '" prepend_header "' + xip_image2_bin + '" __flash_text_start__ "' + target_img2_map + '"'
         os.system(cmd)
 
         cmd = 'cat "' + os.path.join(target_dir, 'xip_image2_prepend.bin') + '" "' + \
