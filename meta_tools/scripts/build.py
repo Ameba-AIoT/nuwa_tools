@@ -13,7 +13,8 @@ import subprocess
 import sys
 
 
-NUWA_SDK_VENV_DIR = '.venv'
+import base.rtk_utils as utils
+
 NUWA_SDK_QUERY_CFG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'query.json')
 NUWA_SDK_DEFAULT_IMAGE_DIR = 'images'
 NUWA_SDK_DEFAULT_BUILD_DIR = 'build'
@@ -35,22 +36,6 @@ def run_shell_cmd_with_output(cmd):
     return subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 
 
-def check_venv():
-    if os.path.exists(NUWA_SDK_VENV_DIR):
-        pass
-    else:
-        # Create virtual environment if it does not exist
-        try:
-            if sys.platform == "win32":
-                subprocess.check_call([sys.executable, '-m', 'virtualenv', NUWA_SDK_VENV_DIR])
-            else:
-                import venv
-                venv.create(NUWA_SDK_VENV_DIR)
-        except:
-            print("Error: Fail to create Python virtual environment")
-            sys.exit(2)
-
-
 def main(argc, argv):
     parser = argparse.ArgumentParser(description=None)
     parser.add_argument('-a', '--app', help='application path')
@@ -59,6 +44,7 @@ def main(argc, argv):
     parser.add_argument('-i', '--image-dir', help='image directory')
     parser.add_argument('-t', '--toolchain-dir', help='toolchain directory')
     parser.add_argument('-p', '--pristine', action='store_true', help='pristine build')
+    parser.add_argument('-c', '--clean', action='store_true', help='clean the build')
 
     args = parser.parse_args()
 
@@ -101,7 +87,7 @@ def main(argc, argv):
     else:
         image_dir = os.path.normcase(args.image_dir)
 
-    check_venv()
+    utils.check_venv()
 
     cfg = None
     if os.path.exists(NUWA_SDK_QUERY_CFG_FILE):
@@ -126,16 +112,10 @@ def main(argc, argv):
     toolchain = cfg['chips'][chip]['toolchain']
 
     toolchain_path = None
-    cmd_activate_venv = None
-    cmd_deactivate_venv = None
     if os.name == 'nt':
-        toolchain_path = os.path.join(toolchain_dir, toolchain, 'mingw32', 'newlib')
-        cmd_activate_venv = os.path.join(NUWA_SDK_VENV_DIR, 'Scripts', 'activate.bat')
-        cmd_deactivate_venv = os.path.join(NUWA_SDK_VENV_DIR, 'Scripts', 'deactivate.bat')
+        toolchain_path = os.path.join(toolchain_dir, toolchain, 'mingw32', 'newlib') 
     else:
         toolchain_path = os.path.join(toolchain_dir, toolchain, 'linux', 'newlib')
-        cmd_activate_venv = 'source ' + os.path.join(NUWA_SDK_VENV_DIR, 'bin', 'activate')
-        cmd_deactivate_venv = 'deactivate'
 
     if os.path.exists(toolchain_path):
         pass
@@ -145,31 +125,40 @@ def main(argc, argv):
 
     os.environ['ZEPHYR_TOOLCHAIN_VARIANT'] = 'gnuarmemb'
     os.environ['GNUARMEMB_TOOLCHAIN_PATH'] = toolchain_path
+    
+    if args.clean:
+        try:
+            subprocess.run([utils.VENV_PYTHON_EXECUTABLE, "-m" "west", "build", "-t", "clean", "-d", build_dir], 
+                        check=True, 
+                        text=True)
+            print("Clean successful")
+            sys.exit(0)
+        except subprocess.CalledProcessError as e:
+            print("Clean failed")
+            print("Error:", e.stderr)
+            sys.exit(1)
 
-    cmd = cmd_activate_venv + ' && '
-    cmd += 'west build -b ' + args.device
-    cmd += ' -d ' + build_dir
+    build_cmd = [
+        utils.VENV_PYTHON_EXECUTABLE, "-m", "west", "build", "-b", args.device, "-d", build_dir
+    ]
 
     if args.pristine:
-        cmd += ' -p always'
+        build_cmd.extend(["-p", "always"])
     else:
-        cmd += ' -p auto'
+        build_cmd.extend(["-p", "auto"])
 
-    cmd += ' ' + args.app
+    build_cmd.append(args.app)
 
-    rc = os.system(cmd)
-    if rc != 0:
-        run_shell_cmd_with_output(cmd_deactivate_venv)
-        print('Error: Fail to build application')
-        # Return code will be truncated, e.g.: 256 => 0, so the raw return code will not be used
+    try:
+        subprocess.run(build_cmd, check=True, text=True)
+        print("Build successful")
+    except subprocess.CalledProcessError as e:
+        print("Build failed")
+        print("Error:", e.stderr)
         sys.exit(1)
-    else:
-        run_shell_cmd_with_output(cmd_deactivate_venv)
 
     if os.path.exists(image_dir):
         shutil.rmtree(image_dir)
-    else:
-        pass
 
     target_dir = os.path.join(build_dir, 'zephyr')
     zephyr_bin = os.path.join(target_dir, 'zephyr.bin')
@@ -182,7 +171,7 @@ def main(argc, argv):
     gcc_fromelf = os.path.join(toolchain_path, 'bin', GCC_FROMELF)
 
     cmd = gcc_objdump + ' -d "' + zephyr_elf + '" > ' + zephyr_asm
-    os.system(cmd)
+    subprocess.run(cmd, shell=True)
 
     if (args.device == 'rtl872xda_evb'):
         xip_image2_bin = os.path.join(target_dir, 'xip_image2.bin')
@@ -211,14 +200,14 @@ def main(argc, argv):
             print('Error: No zephyr image generated')
             sys.exit(1)
 
-        cmd = gcc_strip + ' ' + target_pure_img2_axf
-        os.system(cmd)
+        cmd =[gcc_strip, target_pure_img2_axf]
+        subprocess.run(cmd)
 
-        cmd = gcc_fromelf + ' -j .ram_image2.entry -Obinary "' + target_pure_img2_axf + '" "' + entry_bin + '"'
-        os.system(cmd)
+        cmd = [gcc_fromelf, '-j', '.ram_image2.entry', '-Obinary', target_pure_img2_axf, entry_bin]
+        subprocess.run(cmd)
 
-        cmd = gcc_fromelf + ' -j .null.empty -Obinary "' + target_pure_img2_axf + '" "' + sram_2_bin + '"'
-        os.system(cmd)
+        cmd = [gcc_fromelf, '-j', '.null.empty', '-Obinary', target_pure_img2_axf, sram_2_bin]
+        subprocess.run(cmd)
 
         # let .ARM.extab/.ARM.exidx +- 1GB can jump to *(.text*)
         cmd = "grep __exidx_end '" + zephyr_map + "' | awk '{print $1}'"
@@ -230,50 +219,50 @@ def main(argc, argv):
             sys.exit(1)
 
         if arm_ex_addr > 0x60000000:
-            cmd = gcc_fromelf + ' -j .null.empty -Obinary "' + target_pure_img2_axf + '" "' + psram_2_bin + '"'
+            cmd = [gcc_fromelf, '-j', '.null.empty', '-Obinary', target_pure_img2_axf, psram_2_bin]
         else:
-            cmd = gcc_fromelf + ' -j .null.empty -Obinary "' + target_pure_img2_axf + '" "' + psram_2_bin + '"'
+            cmd = [gcc_fromelf, '-j', '.null.empty', '-Obinary', target_pure_img2_axf, psram_2_bin]
 
-        os.system(cmd)
+        subprocess.run(cmd)
 
         print('========== Image manipulating start ==========')
-        cmd = cmd_activate_venv + ' && ' + 'python "' + NUWA_SDK_AXF2BIN_SCRIPT + '" pad "' + xip_image2_bin + '" 32'
-        os.system(cmd)
+        cmd = [utils.VENV_PYTHON_EXECUTABLE, NUWA_SDK_AXF2BIN_SCRIPT, 'pad', xip_image2_bin, '32']
+        subprocess.run(cmd)
 
         cmd = 'echo "0e000020 T __flash_text_start__" > "' + target_img2_map + '" && '
         cmd += 'echo "0e000020 T __psram_image2_start__" >> "' + target_img2_map + '" && '
         cmd += 'echo "20010020 T __sram_image2_start__" >> "' + target_img2_map + '" && '
         cmd += 'echo "20004da0 D __image2_entry_func__" >> "' + target_img2_map + '"'
-        os.system(cmd)
+        subprocess.run(cmd, shell=True)
 
-        cmd = cmd_activate_venv + ' && ' + 'python "' + NUWA_SDK_AXF2BIN_SCRIPT + '" prepend_header "' + entry_bin + '" __image2_entry_func__ "' + target_img2_map + '"'
-        os.system(cmd)
-        cmd = cmd_activate_venv + ' && ' + 'python "' + NUWA_SDK_AXF2BIN_SCRIPT + '" prepend_header "' + sram_2_bin + '" __sram_image2_start__ "' + target_img2_map + '"'
-        os.system(cmd)
-        cmd = cmd_activate_venv + ' && ' + 'python "' + NUWA_SDK_AXF2BIN_SCRIPT + '" prepend_header "' + psram_2_bin + '" __psram_image2_start__ "' + target_img2_map + '"'
-        os.system(cmd)
-        cmd = cmd_activate_venv + ' && ' + 'python "' + NUWA_SDK_AXF2BIN_SCRIPT + '" prepend_header "' + xip_image2_bin + '" __flash_text_start__ "' + target_img2_map + '"'
-        os.system(cmd)
+        cmd = [utils.VENV_PYTHON_EXECUTABLE, NUWA_SDK_AXF2BIN_SCRIPT, "prepend_header", entry_bin, "__image2_entry_func__", target_img2_map]
+        subprocess.run(cmd)
+        cmd = [utils.VENV_PYTHON_EXECUTABLE, NUWA_SDK_AXF2BIN_SCRIPT, "prepend_header", sram_2_bin, "__sram_image2_start__", target_img2_map]
+        subprocess.run(cmd)
+        cmd = [utils.VENV_PYTHON_EXECUTABLE, NUWA_SDK_AXF2BIN_SCRIPT, "prepend_header", psram_2_bin, "__psram_image2_start__", target_img2_map]
+        subprocess.run(cmd)
+        cmd = [utils.VENV_PYTHON_EXECUTABLE, NUWA_SDK_AXF2BIN_SCRIPT, "prepend_header", xip_image2_bin, "__flash_text_start__", target_img2_map]
+        subprocess.run(cmd)
 
         cmd = 'cat "' + os.path.join(target_dir, 'xip_image2_prepend.bin') + '" "' + \
             os.path.join(target_dir, 'sram_2_prepend.bin') + '" "' + \
             os.path.join(target_dir, 'psram_2_prepend.bin') + '" "' + \
             os.path.join(target_dir, 'entry_prepend.bin') + '" > "' + \
             km4_image2_all_bin + '"'
-        os.system(cmd)
+        subprocess.run(cmd, shell=True)
 
         for root, dirs, files in os.walk(os.path.join('modules', 'hal', 'realtek', 'ameba', chip.lower(), 'bin')):
             for f in files:
                 shutil.copy(os.path.join(root, f), target_dir)
 
-        # TODO: replase by imagetool.py
+        # TODO: replace by imagetool.py
 
         cmd = 'cat "' + km0_image2_all_bin + '" "' + km4_image2_all_bin + '" > "' + km0_km4_app_tmp_bin + '"'
-        os.system(cmd)
-        cmd = cmd_activate_venv + ' && ' + 'python "' + NUWA_SDK_AXF2BIN_SCRIPT + '" cert "' + NUWA_SDK_MANIFEST_JSON + '" "' + NUWA_SDK_MANIFEST_JSON + '" "' + cert_bin + '" 0 app'
-        os.system(cmd)
-        cmd = cmd_activate_venv + ' && ' + 'python "' + NUWA_SDK_AXF2BIN_SCRIPT + '" manifest "' + NUWA_SDK_MANIFEST_JSON + '" "' + NUWA_SDK_MANIFEST_JSON + '" "' + km0_km4_app_tmp_bin + '" "' + manifest_bin + '" app'
-        os.system(cmd)
+        subprocess.run(cmd, shell=True)
+        cmd = [utils.VENV_PYTHON_EXECUTABLE, NUWA_SDK_AXF2BIN_SCRIPT, 'cert', NUWA_SDK_MANIFEST_JSON, NUWA_SDK_MANIFEST_JSON, cert_bin, '0', 'app']
+        subprocess.run(cmd)
+        cmd = [utils.VENV_PYTHON_EXECUTABLE, NUWA_SDK_AXF2BIN_SCRIPT, "manifest", NUWA_SDK_MANIFEST_JSON, NUWA_SDK_MANIFEST_JSON, km0_km4_app_tmp_bin, manifest_bin, "app"]
+        subprocess.run(cmd)
 
         if os.path.exists(manifest_bin):
             pass
@@ -281,21 +270,21 @@ def main(argc, argv):
             print('Error: Fail to generate manifest.bin')
             sys.exit(1)
 
-        cmd = cmd_activate_venv + ' && ' + 'python "' + NUWA_SDK_AXF2BIN_SCRIPT + '" rsip "' + km0_image2_all_bin + '" "' + km0_image2_all_en_bin + '" 0x0c000000 "' + NUWA_SDK_MANIFEST_JSON + '" app'
-        os.system(cmd)
-        cmd = cmd_activate_venv + ' && ' + 'python "' + NUWA_SDK_AXF2BIN_SCRIPT + '" rsip "' + km4_image2_all_bin + '" "' + km4_image2_all_en_bin + '" 0x0e000000 "' + NUWA_SDK_MANIFEST_JSON + '" app'
-        os.system(cmd)
+        cmd = [utils.VENV_PYTHON_EXECUTABLE, NUWA_SDK_AXF2BIN_SCRIPT, 'rsip', km0_image2_all_bin, km0_image2_all_en_bin, '0x0c000000', NUWA_SDK_MANIFEST_JSON, 'app']
+        subprocess.run(cmd)
+        cmd = [utils.VENV_PYTHON_EXECUTABLE, NUWA_SDK_AXF2BIN_SCRIPT, 'rsip', km4_image2_all_bin, km4_image2_all_en_bin, '0x0e000000', NUWA_SDK_MANIFEST_JSON, 'app']
+        subprocess.run(cmd)
 
         if os.path.exists(km4_image3_all_en_bin):
             cmd = 'cat "' + cert_bin + '" "' + manifest_bin + '" "' + km0_image2_all_bin + '" "' +  km4_image2_all_bin + '" "' + km4_image3_all_bin + '" > "' + km0_km4_app_ns_bin + '"'
-            os.system(cmd)
+            subprocess.run(cmd, shell=True)
             cmd = 'cat "' + cert_bin + '" "' + manifest_bin + '" "' + km0_image2_all_en_bin + '" "' +  km4_image2_all_en_bin + '" "' + km4_image3_all_en_bin + '" > "' + km0_km4_app_bin + '"'
-            os.system(cmd)
+            subprocess.run(cmd, shell=True)
         else:
             cmd = 'cat "' + cert_bin + '" "' + manifest_bin + '" "' + km0_image2_all_bin + '" "' +  km4_image2_all_bin + '" > "' + km0_km4_app_ns_bin + '"'
-            os.system(cmd)
+            subprocess.run(cmd, shell=True)
             cmd = 'cat "' + cert_bin + '" "' + manifest_bin + '" "' + km0_image2_all_en_bin + '" "' +  km4_image2_all_en_bin + '" > "' + km0_km4_app_bin + '"'
-            os.system(cmd)
+            subprocess.run(cmd, shell=True)
 
         os.remove(cert_bin)
         os.remove(manifest_bin)
@@ -332,50 +321,50 @@ def main(argc, argv):
             print('Error: No zephyr image generated')
             sys.exit(1)
 
-        cmd = gcc_strip + ' ' + target_pure_img2_axf
-        os.system(cmd)
+        cmd = [gcc_strip, target_pure_img2_axf]
+        subprocess.run(cmd)
 
-        cmd = gcc_fromelf + ' -j .ram_image2.entry -Obinary "' + target_pure_img2_axf + '" "' + sram_2_bin + '"'
-        os.system(cmd)
+        cmd = [gcc_fromelf, '-j', '.ram_image2.entry', '-Obinary', target_pure_img2_axf, sram_2_bin]
+        subprocess.run(cmd)
 
-        cmd = gcc_fromelf + ' -j .null.empty -Obinary "' + target_pure_img2_axf + '" "' + psram_2_bin + '"'
-        os.system(cmd)
+        cmd = [gcc_fromelf, '-j', '.null.empty', '-Obinary', target_pure_img2_axf, psram_2_bin]
+        subprocess.run(cmd)
 
         print('========== Image manipulating start ==========')
 
-        cmd = cmd_activate_venv + ' && ' + 'python "' + NUWA_SDK_AXF2BIN_SCRIPT + '" pad "' + xip_image2_bin + '" 32'
-        os.system(cmd)
-        cmd = cmd_activate_venv + ' && ' + 'python "' + NUWA_SDK_AXF2BIN_SCRIPT + '" pad "' + sram_2_bin + '" 32'
-        os.system(cmd)
-        cmd = cmd_activate_venv + ' && ' + 'python "' + NUWA_SDK_AXF2BIN_SCRIPT + '" pad "' + psram_2_bin + '" 32'
-        os.system(cmd)
+        cmd = [utils.VENV_PYTHON_EXECUTABLE, NUWA_SDK_AXF2BIN_SCRIPT, "pad", xip_image2_bin, "32"]
+        subprocess.run(cmd)
+        cmd = [utils.VENV_PYTHON_EXECUTABLE, NUWA_SDK_AXF2BIN_SCRIPT, "pad", sram_2_bin, "32"]
+        subprocess.run(cmd)
+        cmd = [utils.VENV_PYTHON_EXECUTABLE, NUWA_SDK_AXF2BIN_SCRIPT, "pad", psram_2_bin, "32"]
+        subprocess.run(cmd)
 
         cmd = 'echo "0e000020 T __flash_text_start__" > "' + target_img2_map + '" && '
         cmd += 'echo "10003000 T __sram_image2_start__" >> "' + target_img2_map + '" && '
         cmd += 'echo "0e000020 T __psram_image2_start__" >> "' + target_img2_map + '"'
-        os.system(cmd)
+        subprocess.run(cmd, shell=True)
 
-        cmd = cmd_activate_venv + ' && ' + 'python "' + NUWA_SDK_AXF2BIN_SCRIPT + '" prepend_header "' + sram_2_bin + '" __sram_image2_start__ "' + target_img2_map + '"'
-        os.system(cmd)
-        cmd = cmd_activate_venv + ' && ' + 'python "' + NUWA_SDK_AXF2BIN_SCRIPT + '" prepend_header "' + psram_2_bin + '" __psram_image2_start__ "' + target_img2_map + '"'
-        os.system(cmd)
-        cmd = cmd_activate_venv + ' && ' + 'python "' + NUWA_SDK_AXF2BIN_SCRIPT + '" prepend_header "' + xip_image2_bin + '" __flash_text_start__ "' + target_img2_map + '"'
-        os.system(cmd)
+        cmd = [utils.VENV_PYTHON_EXECUTABLE, NUWA_SDK_AXF2BIN_SCRIPT, 'prepend_header', sram_2_bin, '__sram_image2_start__', target_img2_map]
+        subprocess.run(cmd)
+        cmd = [utils.VENV_PYTHON_EXECUTABLE, NUWA_SDK_AXF2BIN_SCRIPT, 'prepend_header', psram_2_bin, '__psram_image2_start__', target_img2_map]
+        subprocess.run(cmd)
+        cmd = [utils.VENV_PYTHON_EXECUTABLE, NUWA_SDK_AXF2BIN_SCRIPT, 'prepend_header', xip_image2_bin, '__flash_text_start__', target_img2_map]
+        subprocess.run(cmd)
 
         cmd = 'cat "' + os.path.join(target_dir, 'xip_image2_prepend.bin') + '" "' + \
             os.path.join(target_dir, 'sram_2_prepend.bin') + '" "' + \
             os.path.join(target_dir, 'psram_2_prepend.bin') + '" > "' + \
             km4_image2_all_bin + '"'
-        os.system(cmd)
+        subprocess.run(cmd, shell=True)
 
         for root, dirs, files in os.walk(os.path.join('modules', 'hal', 'realtek', 'ameba', chip.lower(), 'bin')):
             for f in files:
                 shutil.copy(os.path.join(root, f), target_dir)
 
-        # TODO: replase by imagetool.py
+        # TODO: replace by imagetool.py
 
         cmd = 'cat "' + km0_image2_all_bin + '" "' + km4_image2_all_bin + '" > "' + km0_km4_app_bin + '"'
-        os.system(cmd)
+        subprocess.run(cmd, shell=True)
 
         print('=========== Image manipulating end ===========')
 
