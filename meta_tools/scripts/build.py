@@ -11,17 +11,16 @@ import os
 import shutil
 import subprocess
 import sys
-
+from pathlib import Path
 
 import base.rtk_utils as utils
 
 NUWA_SDK_QUERY_CFG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'query.json')
 NUWA_SDK_DEFAULT_IMAGE_DIR = 'images'
 NUWA_SDK_DEFAULT_BUILD_DIR = 'build'
-NUWA_SDK_IMAGE_SCRIPT_DIR = os.path.join('tools', 'image_scripts')
-NUWA_SDK_AXF2BIN_SCRIPT = os.path.join(NUWA_SDK_IMAGE_SCRIPT_DIR, 'axf2bin.py')
-NUWA_SDK_MANIFEST_JSON = os.path.join(NUWA_SDK_IMAGE_SCRIPT_DIR, 'manifest.json')
-NUWA_SDK_TOOLCHAIN_DEFAULT_PATH_WINDOWS = 'C:\\msys64\\opt\\rtk-toolchain'
+NUWA_SDK_SOC_PROJECT_DIR = os.path.join('tools', 'meta_tools', 'scripts', 'soc_project')
+NUWA_SDK_AXF2BIN_SCRIPT = os.path.join('tools', 'scripts', 'axf2bin.py')
+NUWA_SDK_TOOLCHAIN_DEFAULT_PATH_WINDOWS = 'C:\\rtk-toolchain'
 NUWA_SDK_TOOLCHAIN_DEFAULT_PATH_LINUX = '/opt/rtk-toolchain'
 
 GCC_PREFIX = 'arm-none-eabi-'
@@ -35,6 +34,28 @@ GCC_NM = GCC_PREFIX + 'nm'
 def run_shell_cmd_with_output(cmd):
     return subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 
+def axf2bin_pad(input_file, length):
+    cmd = [utils.VENV_PYTHON_EXECUTABLE, NUWA_SDK_AXF2BIN_SCRIPT, 'pad', '-i', input_file, '-l', str(length)]
+    subprocess.run(cmd)
+
+def axf2bin_prepend_head(output_file, input_file, symbol, map_file):
+    cmd = [utils.VENV_PYTHON_EXECUTABLE, NUWA_SDK_AXF2BIN_SCRIPT, "prepend_header",
+           '-o', output_file,
+           '-i', input_file,
+           '-s', symbol,
+           '-m', map_file]
+    subprocess.run(cmd)
+
+def ameba_axf2bin_fw_pack(target_dir, output_file, *input_files):
+    cmd = [utils.VENV_PYTHON_EXECUTABLE, NUWA_SDK_AXF2BIN_SCRIPT, '--post-build-dir', target_dir,
+           'fw_pack', '-o', output_file, *input_files]
+    subprocess.run(cmd)
+
+def concatenate_files(input_files, output_file):
+    with open(output_file, 'wb') as outfile:
+        for file in input_files:
+            with open(file, 'rb') as infile:
+                shutil.copyfileobj(infile, outfile)
 
 def main(argc, argv):
     parser = argparse.ArgumentParser(description=None)
@@ -113,7 +134,7 @@ def main(argc, argv):
 
     toolchain_path = None
     if os.name == 'nt':
-        toolchain_path = os.path.join(toolchain_dir, toolchain, 'mingw32', 'newlib') 
+        toolchain_path = os.path.join(toolchain_dir, toolchain, 'mingw32', 'newlib')
     else:
         toolchain_path = os.path.join(toolchain_dir, toolchain, 'linux', 'newlib')
 
@@ -125,11 +146,11 @@ def main(argc, argv):
 
     os.environ['ZEPHYR_TOOLCHAIN_VARIANT'] = 'gnuarmemb'
     os.environ['GNUARMEMB_TOOLCHAIN_PATH'] = toolchain_path
-    
+
     if args.clean:
         try:
-            subprocess.run([utils.VENV_PYTHON_EXECUTABLE, "-m" "west", "build", "-t", "clean", "-d", build_dir], 
-                        check=True, 
+            subprocess.run([utils.VENV_PYTHON_EXECUTABLE, "-m" "west", "build", "-t", "clean", "-d", build_dir],
+                        check=True,
                         text=True)
             print("Clean successful")
             sys.exit(0)
@@ -160,11 +181,10 @@ def main(argc, argv):
     if os.path.exists(image_dir):
         shutil.rmtree(image_dir)
 
-    target_dir = os.path.join(build_dir, 'zephyr')
-    zephyr_bin = os.path.join(target_dir, 'zephyr.bin')
-    zephyr_elf = os.path.join(target_dir, 'zephyr.elf')
-    zephyr_map = os.path.join(target_dir, 'zephyr.map')
-    zephyr_asm = os.path.join(target_dir, 'zephyr.asm')
+    zephyr_bin = os.path.join(build_dir, 'zephyr', 'zephyr.bin')
+    zephyr_elf = os.path.join(build_dir, 'zephyr', 'zephyr.elf')
+    zephyr_map = os.path.join(build_dir, 'zephyr', 'zephyr.map')
+    zephyr_asm = os.path.join(build_dir, 'zephyr', 'zephyr.asm')
 
     gcc_objdump = os.path.join(toolchain_path, 'bin', GCC_OBJDUMP)
     gcc_strip = os.path.join(toolchain_path, 'bin', GCC_STRIP)
@@ -174,24 +194,20 @@ def main(argc, argv):
     subprocess.run(cmd, shell=True)
 
     if (args.device == 'rtl872xda_evb'):
-        xip_image2_bin = os.path.join(target_dir, 'xip_image2.bin')
-        target_pure_img2_axf = os.path.join(target_dir, 'target_pure_img2.axf')
-        target_img2_map = os.path.join(target_dir, 'target_img2.map')
-        km4_boot_all_bin = os.path.join(target_dir, 'km4_boot_all.bin')
-        km0_image2_all_bin = os.path.join(target_dir, 'km0_image2_all.bin')
-        km4_image2_all_bin = os.path.join(target_dir, 'km4_image2_all.bin')
-        km4_image3_all_bin = os.path.join(target_dir, 'km4_image3_all.bin')
-        km0_km4_app_tmp_bin = os.path.join(target_dir, 'km0_km4_app_tmp.bin')
-        km0_image2_all_en_bin = os.path.join(target_dir, 'km0_image2_all_en.bin')
-        km4_image2_all_en_bin = os.path.join(target_dir, 'km4_image2_all_en.bin')
-        km4_image3_all_en_bin = os.path.join(target_dir, 'km4_image3_all_en.bin')
-        km0_km4_app_ns_bin = os.path.join(target_dir, 'km0_km4_app_ns.bin')
-        km0_km4_app_bin = os.path.join(target_dir, 'km0_km4_app.bin')
-        manifest_bin = os.path.join(target_dir, 'manifest.bin')
-        cert_bin = os.path.join(target_dir, 'cert.bin')
-        entry_bin = os.path.join(target_dir, 'entry.bin')
-        sram_2_bin = os.path.join(target_dir, 'sram_2.bin')
-        psram_2_bin = os.path.join(target_dir, 'psram_2.bin')
+        target_dir = Path(build_dir) / 'amebadplus_gcc_project'
+        target_dir.mkdir(parents=True, exist_ok=True)
+
+        xip_image2_bin = Path(target_dir) / 'xip_image2.bin'
+        target_pure_img2_axf = Path(target_dir) / 'target_pure_img2.axf'
+        target_img2_map = Path(target_dir) / 'target_img2.map'
+        km4_boot_all_bin = Path(target_dir) / 'km4_boot_all.bin'
+        km0_image2_all_bin = Path(target_dir) / 'km0_image2_all.bin'
+        km4_image2_all_bin = Path(target_dir) / 'km4_image2_all.bin'
+        km4_image3_all_bin = Path(target_dir) / 'km4_image3_all.bin'
+        km0_km4_app_bin = Path(target_dir) / 'km0_km4_app.bin'
+        entry_bin = Path(target_dir) / 'entry.bin'
+        sram_2_bin = Path(target_dir) / 'sram_2.bin'
+        psram_2_bin = Path(target_dir) / 'psram_2.bin'
 
         if os.path.exists(zephyr_bin) and os.path.exists(zephyr_elf):
             shutil.copyfile(zephyr_bin, xip_image2_bin)
@@ -226,71 +242,46 @@ def main(argc, argv):
         subprocess.run(cmd)
 
         print('========== Image manipulating start ==========')
-        cmd = [utils.VENV_PYTHON_EXECUTABLE, NUWA_SDK_AXF2BIN_SCRIPT, 'pad', xip_image2_bin, '32']
-        subprocess.run(cmd)
 
-        cmd = 'echo "0e000020 T __flash_text_start__" > "' + target_img2_map + '" && '
-        cmd += 'echo "0e000020 T __psram_image2_start__" >> "' + target_img2_map + '" && '
-        cmd += 'echo "20010020 T __sram_image2_start__" >> "' + target_img2_map + '" && '
-        cmd += 'echo "20004da0 D __image2_entry_func__" >> "' + target_img2_map + '"'
-        subprocess.run(cmd, shell=True)
+        axf2bin_pad(xip_image2_bin, 32)
 
-        cmd = [utils.VENV_PYTHON_EXECUTABLE, NUWA_SDK_AXF2BIN_SCRIPT, "prepend_header", entry_bin, "__image2_entry_func__", target_img2_map]
-        subprocess.run(cmd)
-        cmd = [utils.VENV_PYTHON_EXECUTABLE, NUWA_SDK_AXF2BIN_SCRIPT, "prepend_header", sram_2_bin, "__sram_image2_start__", target_img2_map]
-        subprocess.run(cmd)
-        cmd = [utils.VENV_PYTHON_EXECUTABLE, NUWA_SDK_AXF2BIN_SCRIPT, "prepend_header", psram_2_bin, "__psram_image2_start__", target_img2_map]
-        subprocess.run(cmd)
-        cmd = [utils.VENV_PYTHON_EXECUTABLE, NUWA_SDK_AXF2BIN_SCRIPT, "prepend_header", xip_image2_bin, "__flash_text_start__", target_img2_map]
-        subprocess.run(cmd)
+        map_contents = [
+            "0e000020 T __flash_text_start__",
+            "0e000020 T __psram_image2_start__",
+            "20010020 T __sram_image2_start__",
+            "20004da0 D __image2_entry_func__"
+        ]
+        target_img2_map.write_text('\n'.join(map_contents))
 
-        cmd = 'cat "' + os.path.join(target_dir, 'xip_image2_prepend.bin') + '" "' + \
-            os.path.join(target_dir, 'sram_2_prepend.bin') + '" "' + \
-            os.path.join(target_dir, 'psram_2_prepend.bin') + '" "' + \
-            os.path.join(target_dir, 'entry_prepend.bin') + '" > "' + \
-            km4_image2_all_bin + '"'
-        subprocess.run(cmd, shell=True)
+        entry_prepend_bin = Path(target_dir) / 'entry_prepend.bin'
+        sram_2_prepend_bin = Path(target_dir) / 'sram_2_prepend.bin'
+        psram_2_prepend_bin = Path(target_dir) / 'psram_2_prepend.bin'
+        xip_image2_prepend_bin = Path(target_dir) / 'xip_image2_prepend.bin'
 
-        for root, dirs, files in os.walk(os.path.join('modules', 'hal', 'realtek', 'ameba', chip.lower(), 'bin')):
-            for f in files:
-                shutil.copy(os.path.join(root, f), target_dir)
+        axf2bin_prepend_head(entry_prepend_bin, entry_bin, '__image2_entry_func__', target_img2_map)
+        axf2bin_prepend_head(sram_2_prepend_bin, sram_2_bin, '__sram_image2_start__', target_img2_map)
+        axf2bin_prepend_head(psram_2_prepend_bin, psram_2_bin, '__psram_image2_start__', target_img2_map)
+        axf2bin_prepend_head(xip_image2_prepend_bin, xip_image2_bin, '__flash_text_start__', target_img2_map)
 
-        # TODO: replace by imagetool.py
+        input_files = [xip_image2_prepend_bin, sram_2_prepend_bin, psram_2_prepend_bin, entry_prepend_bin]
+        concatenate_files(input_files, km4_image2_all_bin)
 
-        cmd = 'cat "' + km0_image2_all_bin + '" "' + km4_image2_all_bin + '" > "' + km0_km4_app_tmp_bin + '"'
-        subprocess.run(cmd, shell=True)
-        cmd = [utils.VENV_PYTHON_EXECUTABLE, NUWA_SDK_AXF2BIN_SCRIPT, 'cert', NUWA_SDK_MANIFEST_JSON, NUWA_SDK_MANIFEST_JSON, cert_bin, '0', 'app']
+        source_dir = Path('modules') / 'hal' / 'realtek' / 'ameba' / chip.lower() / 'bin'
+        for file_path in source_dir.rglob('*'):
+            if file_path.is_file():
+                shutil.copy(file_path, target_dir)
+
+        shutil.copy(os.path.join(NUWA_SDK_SOC_PROJECT_DIR, 'amebadplus', 'manifest.json5'), target_dir)
+        shutil.copy(os.path.join(NUWA_SDK_SOC_PROJECT_DIR, 'amebadplus', 'ameba_layout.ld'), target_dir)
+
+        cmd = [utils.VENV_PYTHON_EXECUTABLE, NUWA_SDK_AXF2BIN_SCRIPT, 'cut', '-o', target_dir / 'km4_boot.bin', '-i', km4_boot_all_bin, '-l', '4096']
         subprocess.run(cmd)
-        cmd = [utils.VENV_PYTHON_EXECUTABLE, NUWA_SDK_AXF2BIN_SCRIPT, "manifest", NUWA_SDK_MANIFEST_JSON, NUWA_SDK_MANIFEST_JSON, km0_km4_app_tmp_bin, manifest_bin, "app"]
-        subprocess.run(cmd)
+        ameba_axf2bin_fw_pack(target_dir.resolve(), km4_boot_all_bin, '--image1', target_dir / 'km4_boot.bin')
 
-        if os.path.exists(manifest_bin):
-            pass
+        if os.path.exists(km4_image3_all_bin):
+            ameba_axf2bin_fw_pack(target_dir.resolve(), km0_km4_app_bin, '--image2', km0_image2_all_bin, km4_image2_all_bin, '--image3', km4_image3_all_bin)
         else:
-            print('Error: Fail to generate manifest.bin')
-            sys.exit(1)
-
-        cmd = [utils.VENV_PYTHON_EXECUTABLE, NUWA_SDK_AXF2BIN_SCRIPT, 'rsip', km0_image2_all_bin, km0_image2_all_en_bin, '0x0c000000', NUWA_SDK_MANIFEST_JSON, 'app']
-        subprocess.run(cmd)
-        cmd = [utils.VENV_PYTHON_EXECUTABLE, NUWA_SDK_AXF2BIN_SCRIPT, 'rsip', km4_image2_all_bin, km4_image2_all_en_bin, '0x0e000000', NUWA_SDK_MANIFEST_JSON, 'app']
-        subprocess.run(cmd)
-
-        if os.path.exists(km4_image3_all_en_bin):
-            cmd = 'cat "' + cert_bin + '" "' + manifest_bin + '" "' + km0_image2_all_bin + '" "' +  km4_image2_all_bin + '" "' + km4_image3_all_bin + '" > "' + km0_km4_app_ns_bin + '"'
-            subprocess.run(cmd, shell=True)
-            cmd = 'cat "' + cert_bin + '" "' + manifest_bin + '" "' + km0_image2_all_en_bin + '" "' +  km4_image2_all_en_bin + '" "' + km4_image3_all_en_bin + '" > "' + km0_km4_app_bin + '"'
-            subprocess.run(cmd, shell=True)
-        else:
-            cmd = 'cat "' + cert_bin + '" "' + manifest_bin + '" "' + km0_image2_all_bin + '" "' +  km4_image2_all_bin + '" > "' + km0_km4_app_ns_bin + '"'
-            subprocess.run(cmd, shell=True)
-            cmd = 'cat "' + cert_bin + '" "' + manifest_bin + '" "' + km0_image2_all_en_bin + '" "' +  km4_image2_all_en_bin + '" > "' + km0_km4_app_bin + '"'
-            subprocess.run(cmd, shell=True)
-
-        os.remove(cert_bin)
-        os.remove(manifest_bin)
-        os.remove(km0_km4_app_tmp_bin)
-        os.remove(km0_image2_all_en_bin)
-        os.remove(km4_image2_all_en_bin)
+            ameba_axf2bin_fw_pack(target_dir.resolve(), km0_km4_app_bin, '--image2', km0_image2_all_bin, km4_image2_all_bin)
 
         print('=========== Image manipulating end ===========')
 
@@ -304,15 +295,19 @@ def main(argc, argv):
             print('Error: Fail to manipulate images')
             sys.exit(1)
     elif (args.device == 'rtl872xd_evb'):
-        xip_image2_bin = os.path.join(target_dir, 'xip_image2.bin')
-        sram_2_bin = os.path.join(target_dir, 'sram_2.bin')
-        psram_2_bin = os.path.join(target_dir, 'psram_2.bin')
-        target_pure_img2_axf = os.path.join(target_dir, 'target_pure_img2.axf')
-        target_img2_map = os.path.join(target_dir, 'target_img2.map')
-        bootloader_all_bin = os.path.join(target_dir, 'bootloader_all.bin')
-        km0_image2_all_bin = os.path.join(target_dir, 'km0_image2_all.bin')
-        km4_image2_all_bin = os.path.join(target_dir, 'km4_image2_all.bin')
-        km0_km4_app_bin = os.path.join(target_dir, 'km0_km4_app.bin')
+        target_dir = Path(build_dir) / 'amebad_gcc_project'
+        target_dir.mkdir(parents=True, exist_ok=True)
+
+        xip_image2_bin = Path(target_dir) / 'xip_image2.bin'
+        sram_2_bin = Path(target_dir) / 'sram_2.bin'
+        psram_2_bin = Path(target_dir) / 'psram_2.bin'
+        target_pure_img2_axf = Path(target_dir) / 'target_pure_img2.axf'
+        target_img2_map = Path(target_dir) / 'target_img2.map'
+        bootloader_all_bin = Path(target_dir) / 'bootloader_all.bin'
+        km0_image2_all_bin = Path(target_dir) / 'km0_image2_all.bin'
+        km4_image2_all_bin = Path(target_dir) / 'km4_image2_all.bin'
+        km4_image3_all_bin = Path(target_dir) / 'km4_image3_all.bin'
+        km0_km4_app_bin = Path(target_dir) / 'km0_km4_app.bin'
 
         if os.path.exists(zephyr_bin) and os.path.exists(zephyr_elf):
             shutil.copyfile(zephyr_bin, xip_image2_bin)
@@ -332,39 +327,40 @@ def main(argc, argv):
 
         print('========== Image manipulating start ==========')
 
-        cmd = [utils.VENV_PYTHON_EXECUTABLE, NUWA_SDK_AXF2BIN_SCRIPT, "pad", xip_image2_bin, "32"]
-        subprocess.run(cmd)
-        cmd = [utils.VENV_PYTHON_EXECUTABLE, NUWA_SDK_AXF2BIN_SCRIPT, "pad", sram_2_bin, "32"]
-        subprocess.run(cmd)
-        cmd = [utils.VENV_PYTHON_EXECUTABLE, NUWA_SDK_AXF2BIN_SCRIPT, "pad", psram_2_bin, "32"]
-        subprocess.run(cmd)
+        axf2bin_pad(xip_image2_bin, 32)
+        axf2bin_pad(sram_2_bin, 32)
+        axf2bin_pad(psram_2_bin, 32)
 
-        cmd = 'echo "0e000020 T __flash_text_start__" > "' + target_img2_map + '" && '
-        cmd += 'echo "10003000 T __sram_image2_start__" >> "' + target_img2_map + '" && '
-        cmd += 'echo "0e000020 T __psram_image2_start__" >> "' + target_img2_map + '"'
-        subprocess.run(cmd, shell=True)
+        map_contents = [
+            "0e000020 T __flash_text_start__",
+            "0e000020 T __psram_image2_start__",
+            "10003000 T __sram_image2_start__",
+        ]
+        target_img2_map.write_text('\n'.join(map_contents))
 
-        cmd = [utils.VENV_PYTHON_EXECUTABLE, NUWA_SDK_AXF2BIN_SCRIPT, 'prepend_header', sram_2_bin, '__sram_image2_start__', target_img2_map]
-        subprocess.run(cmd)
-        cmd = [utils.VENV_PYTHON_EXECUTABLE, NUWA_SDK_AXF2BIN_SCRIPT, 'prepend_header', psram_2_bin, '__psram_image2_start__', target_img2_map]
-        subprocess.run(cmd)
-        cmd = [utils.VENV_PYTHON_EXECUTABLE, NUWA_SDK_AXF2BIN_SCRIPT, 'prepend_header', xip_image2_bin, '__flash_text_start__', target_img2_map]
-        subprocess.run(cmd)
+        sram_2_prepend_bin = Path(target_dir) / 'sram_2_prepend.bin'
+        psram_2_prepend_bin = Path(target_dir) / 'psram_2_prepend.bin'
+        xip_image2_prepend_bin = Path(target_dir) / 'xip_image2_prepend.bin'
 
-        cmd = 'cat "' + os.path.join(target_dir, 'xip_image2_prepend.bin') + '" "' + \
-            os.path.join(target_dir, 'sram_2_prepend.bin') + '" "' + \
-            os.path.join(target_dir, 'psram_2_prepend.bin') + '" > "' + \
-            km4_image2_all_bin + '"'
-        subprocess.run(cmd, shell=True)
+        axf2bin_prepend_head(sram_2_prepend_bin, sram_2_bin, '__sram_image2_start__', target_img2_map)
+        axf2bin_prepend_head(psram_2_prepend_bin, psram_2_bin, '__psram_image2_start__', target_img2_map)
+        axf2bin_prepend_head(xip_image2_prepend_bin, xip_image2_bin, '__flash_text_start__', target_img2_map)
 
-        for root, dirs, files in os.walk(os.path.join('modules', 'hal', 'realtek', 'ameba', chip.lower(), 'bin')):
-            for f in files:
-                shutil.copy(os.path.join(root, f), target_dir)
+        input_files = [xip_image2_prepend_bin, sram_2_prepend_bin, psram_2_prepend_bin]
+        concatenate_files(input_files, km4_image2_all_bin)
 
-        # TODO: replace by imagetool.py
+        source_dir = Path('modules') / 'hal' / 'realtek' / 'ameba' / chip.lower() / 'bin'
+        for file_path in source_dir.rglob('*'):
+            if file_path.is_file():
+                shutil.copy(file_path, target_dir)
 
-        cmd = 'cat "' + km0_image2_all_bin + '" "' + km4_image2_all_bin + '" > "' + km0_km4_app_bin + '"'
-        subprocess.run(cmd, shell=True)
+        shutil.copy(os.path.join(NUWA_SDK_SOC_PROJECT_DIR, 'amebad', 'manifest.json5'), target_dir)
+        shutil.copy(os.path.join(NUWA_SDK_SOC_PROJECT_DIR, 'amebad', 'ameba_layout.ld'), target_dir)
+
+        if os.path.exists(km4_image3_all_bin):
+            ameba_axf2bin_fw_pack(target_dir.resolve(), km0_km4_app_bin, '--image2', km0_image2_all_bin, km4_image2_all_bin, '--image3', km4_image3_all_bin, '--sboot-for-image', '1')
+        else:
+            ameba_axf2bin_fw_pack(target_dir.resolve(), km0_km4_app_bin, '--image2', km0_image2_all_bin, km4_image2_all_bin, '--sboot-for-image', '1')
 
         print('=========== Image manipulating end ===========')
 

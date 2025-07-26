@@ -6,9 +6,11 @@
 
 import io
 import os
+import sys
 import time
 
 from .errno import *
+from .rtk_utils import *
 
 STX = 0x02  # Transfer data
 EOT = 0x04  # End of transfer
@@ -264,13 +266,12 @@ class RomHandler(object):
         floader_path = None
 
         if self.profile.floader:
-            floader_path = os.path.join(os.path.abspath(os.path.dirname(os.path.dirname(__file__))), FloaderDictionary,
-                                        self.profile.floader)
+            floader_path = os.path.realpath(os.path.join(RtkUtils.get_executable_root_path(), FloaderDictionary, self.profile.floader))
 
         if floader_path is None:
             self.logger.error("Flashloader not specified in device profile")
         elif not os.path.exists(floader_path):
-            self.logger.error(f"Flashloader not found: {floader_path}")
+            self.logger.error(f"Flashloader not exists: {floader_path}")
 
         return floader_path
 

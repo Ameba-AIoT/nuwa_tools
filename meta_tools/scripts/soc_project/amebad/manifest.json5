@@ -1,0 +1,29 @@
+{
+  version: 1,
+  image1: {
+    rsip_en: false,
+    rdp_en: false,
+  },
+  image2: {
+    rsip_en: false,
+    rdp_en: false,
+  },
+  image3: {
+    rsip_en: false,
+    rdp_en: true,
+  },
+  cert: {
+  },
+  secure_boot_en: false,
+  secure_image2_en: true,
+  //Algorithm for Secure Boot, only support ed25519
+  algorithm: "ed25519",
+  private_key: "fbed6da10400000054273a0050273a00fafaa77766b1a977ffffffff24000000",
+  public_key: "37313468df98b5b6cec9d5f6b347fdcf1cd2f06c4f5887edf6d3f8c7a88745e4",
+  public_key_hash: "72B2E1CB0E8F715262AF38DFA0E522C95660D0EBFD920F4B1A229845E599C697",
+  //RSIP_MODE: 1 is XTS(CTR+ECB), 0 is CTR, only support CTR
+  rsip_mode: 0,
+  ctr_key: "32982100546871a0aa983b2987560000",
+  rsip_iv: "90acd34ec70a53fa6eba8ca400000000",
+  rdp_key: "2473040ab47c48655a15aa431c4bbb8a"
+}

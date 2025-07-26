@@ -50,13 +50,19 @@
     "chips": {
         "AmebaDplus": {
 	    "core": "Cortex-M33",
-            "toolchain": "asdk-10.3.1",
+            "toolchain": "asdk-10.3.1-4354",
 	    "jlinkScript": "amebadplus/AP2_KM4.JLinkScript"
         },
         "AmebaD": {
             "core": "Cortex-M33",
-                "toolchain": "asdk-10.3.1",
+                "toolchain": "asdk-10.3.1-4354",
             "jlinkScript": "amebad/AP2_KM4.JLinkScript"
         }
-    }
+    },
+    "compatibilityInfo": [
+        {
+            "extensionId": "realtek.real-connect",
+            "minVersion": "1.0.0"
+        }
+    ]
 }
