@@ -373,6 +373,40 @@ def main(argc, argv):
         else:
             print('Error: Fail to manipulate images')
             sys.exit(1)
+    elif (args.device == 'rtl8735b_evb'):
+        target_dir = Path(build_dir) / 'amebapro2_gcc_project'
+        target_dir.mkdir(parents=True, exist_ok=True)
+
+        gcc_compile = os.path.join(toolchain_path, 'bin', GCC_PREFIX + 'gcc')
+        gcc_ld = os.path.join(toolchain_path, 'bin', GCC_PREFIX + 'ld')
+        elf2bin = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'soc_project', 'amebapro2', 'elf2bin.linux')
+
+        if os.path.exists(zephyr_bin):
+            shutil.copy(zephyr_bin, target_dir)
+        else:
+            print('Error: No zephyr image generated')
+            sys.exit(1)
+
+        source_dir = Path('modules') / 'hal' / 'realtek' / 'ameba' / chip.lower() / 'bin'
+        for file_path in source_dir.rglob('*'):
+            if file_path.is_file():
+                shutil.copy(file_path, target_dir)
+
+        shutil.copy(os.path.join(NUWA_SDK_SOC_PROJECT_DIR, 'amebapro2', 'zephyr2rtk.S'), target_dir)
+        cmd = [gcc_compile, '-march=armv8-m.main', '-mthumb', 'zephyr2rtk.S', '-c', '-o', 'zephyr2rtk.o']
+        subprocess.run(cmd, cwd=target_dir)
+
+        shutil.copy(os.path.join(NUWA_SDK_SOC_PROJECT_DIR, 'amebapro2', 'zephyr2rtk.ld'), target_dir)
+        cmd = [gcc_ld, '-A', 'armv8.1-m.main', '-T', 'zephyr2rtk.ld', '-o', 'zephyr2rtk.axf', 'zephyr2rtk.o']
+        subprocess.run(cmd, cwd=target_dir)
+
+        shutil.copy(os.path.join(NUWA_SDK_SOC_PROJECT_DIR, 'amebapro2', 'amebapro2_firmware_zephyr.json'), target_dir)
+        cmd = [elf2bin, 'convert', 'amebapro2_firmware_zephyr.json', 'FIRMWARE', 'firmware_zephyr.bin']
+        subprocess.run(cmd, cwd=target_dir)
+
+        shutil.copy(os.path.join(NUWA_SDK_SOC_PROJECT_DIR, 'amebapro2', 'amebapro2_partitiontable.json'), target_dir)
+        cmd = [elf2bin, 'combine', 'amebapro2_partitiontable.json', 'flash_zephyr.bin', 'PT_PT=partition.bin,CER_TBL=certable.bin,KEY_CER1=certificate.bin,PT_BL_PRI=boot.bin,PT_FW1=firmware_zephyr.bin']
+        subprocess.run(cmd, cwd=target_dir)
     else:
         print('Error: Unsupported device "' + args.device + '"')
         sys.exit(1)

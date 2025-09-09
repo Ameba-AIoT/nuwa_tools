@@ -45,6 +45,10 @@
         "rtl872xd_evb": {
             "chip": "AmebaD",
             "path": "zephyr/boards/arm/rtl872xd_evb"
+        },
+        "rtl8735b_evb": {
+            "chip": "AmebaPro2",
+            "path": "zephyr/boards/arm/rtl8735b_evb"
         }
     },
     "chips": {
@@ -57,6 +61,11 @@
             "core": "Cortex-M33",
                 "toolchain": "asdk-10.3.1-4354",
             "jlinkScript": "amebad/AP2_KM4.JLinkScript"
+        },
+        "AmebaPro2": {
+            "core": "Cortex-M33",
+                "toolchain": "asdk-10.3.1",
+            "jlinkScript": "amebapro2/AP2_KM4.JLinkScript"
         }
     },
     "compatibilityInfo": [
