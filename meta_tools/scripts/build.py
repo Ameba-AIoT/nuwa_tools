@@ -66,6 +66,7 @@ def main(argc, argv):
     parser.add_argument('-t', '--toolchain-dir', help='toolchain directory')
     parser.add_argument('-p', '--pristine', action='store_true', help='pristine build')
     parser.add_argument('-c', '--clean', action='store_true', help='clean the build')
+    parser.add_argument('--overlay-config', help='overlay config file')
 
     args = parser.parse_args()
 
@@ -169,6 +170,9 @@ def main(argc, argv):
         build_cmd.extend(["-p", "auto"])
 
     build_cmd.append(args.app)
+
+    if args.overlay_config:
+        build_cmd.extend(["--", "-DEXTRA_CONF_FILE=" + args.overlay_config])
 
     try:
         subprocess.run(build_cmd, check=True, text=True)
