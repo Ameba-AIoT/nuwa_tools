@@ -266,7 +266,7 @@ def main(argc, argv):
         input_files = [xip_image2_prepend_bin, sram_2_prepend_bin, psram_2_prepend_bin, entry_prepend_bin]
         concatenate_files(input_files, km4_image2_all_bin)
 
-        source_dir = Path('modules') / 'hal' / 'realtek' / 'ameba' / chip.lower() / 'bin'
+        source_dir = Path('modules') / 'hal' / 'realtek' / 'zephyr' / 'blobs' / chip.lower() / 'bin'
         for file_path in source_dir.rglob('*'):
             if file_path.is_file():
                 shutil.copy(file_path, target_dir)
@@ -349,7 +349,7 @@ def main(argc, argv):
         input_files = [xip_image2_prepend_bin, sram_2_prepend_bin, psram_2_prepend_bin]
         concatenate_files(input_files, km4_image2_all_bin)
 
-        source_dir = Path('modules') / 'hal' / 'realtek' / 'ameba' / chip.lower() / 'bin'
+        source_dir = Path('modules') / 'hal' / 'realtek' / 'zephyr' / 'blobs' / chip.lower() / 'bin'
         for file_path in source_dir.rglob('*'):
             if file_path.is_file():
                 shutil.copy(file_path, target_dir)
