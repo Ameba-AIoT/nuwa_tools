@@ -38,7 +38,11 @@
         ]
     },
     "devices": {
-        "rtl872xda_evb": {
+        "rtl8721f_evb": {
+            "chip": "AmebaG2",
+            "path": "zephyr/boards/arm/rtl8721f_evb"
+        },
+            "rtl872xda_evb": {
             "chip": "AmebaDplus",
             "path": "zephyr/boards/arm/rtl872xda_evb"
         },
@@ -48,14 +52,19 @@
         }
     },
     "chips": {
+        "AmebaG2": {
+            "core": "Cortex-M33",
+            "toolchain": "asdk-12.3.1-4431",
+            "jlinkScript": "AmebaG2/AP2_AP.JLinkScript"
+        },
         "AmebaDplus": {
-	    "core": "Cortex-M33",
+            "core": "Cortex-M33",
             "toolchain": "asdk-10.3.1-4354",
-	    "jlinkScript": "amebadplus/AP2_KM4.JLinkScript"
+            "jlinkScript": "amebadplus/AP2_KM4.JLinkScript"
         },
         "AmebaD": {
             "core": "Cortex-M33",
-                "toolchain": "asdk-10.3.1-4354",
+            "toolchain": "asdk-10.3.1-4354",
             "jlinkScript": "amebad/AP2_KM4.JLinkScript"
         }
     },

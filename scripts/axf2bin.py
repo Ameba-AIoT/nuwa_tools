@@ -42,6 +42,7 @@ def parse_args():
     parser.add_argument('--mp', choices=['y', 'n'], default='n', help='Mass production')
     parser.add_argument('--post-build-dir', help='Post Build dir')
     parser.add_argument('--log-level', choices=['DEBUG', 'INFO', 'WARNING'], default='WARNING', help='Logging level')
+    parser.add_argument('--extern-dir', help='External Project Directory')
 
     subparsers = parser.add_subparsers(dest='operation', help='Available operations', required=True)
 
