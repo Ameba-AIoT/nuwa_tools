@@ -409,7 +409,7 @@ def main(argc, argv):
         subprocess.run(cmd, cwd=target_dir)
 
         shutil.copy(os.path.join(NUWA_SDK_SOC_PROJECT_DIR, 'amebapro2', 'amebapro2_partitiontable.json'), target_dir)
-        cmd = [elf2bin, 'combine', 'amebapro2_partitiontable.json', 'flash_zephyr.bin', 'PT_PT=partition.bin,CER_TBL=certable.bin,KEY_CER1=certificate.bin,PT_BL_PRI=boot.bin,PT_FW1=firmware_zephyr.bin']
+        cmd = [elf2bin, 'combine', 'amebapro2_partitiontable.json', 'flash_zephyr.bin', 'PT_PT=partition.bin,CER_TBL=certable.bin,KEY_CER1=certificate.bin,PT_BL_PRI=boot.bin,PT_FW1=firmware_zephyr.bin,PT_ISP_IQ=firmware_isp_iq.bin']
         subprocess.run(cmd, cwd=target_dir)
     else:
         print('Error: Unsupported device "' + args.device + '"')
