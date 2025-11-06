@@ -113,7 +113,7 @@ class ManifestImageConfig:
                         self.rdp_key = config[config["rdp_key"]]
 
         #SBOOT:
-        if image_type in [ImageType.IMAGE1, ImageType.IMAGE2, ImageType.CERT]:  #image3 is not required
+        if image_type in [ImageType.IMAGE1, ImageType.IMAGE2, ImageType.CERT, ImageType.VBMETA]:  #image3 is not required
             self.sboot_enable:bool = config.get("sboot_enable", config.get("secure_boot_en", False))
             if self.sboot_enable:
                 self.sboot_algorithm:str = config["sboot_algorithm"] if "sboot_algorithm" in config else config["algorithm"]
@@ -141,7 +141,7 @@ class ManifestManager(ABC):
 
         self.new_json_data = copy.deepcopy(self.origin_json_data)
         # Add key from outside(global config) of image part if key not in image part
-        for img in ['image1', 'image2', 'image3', 'cert']:
+        for img in ['image1', 'image2', 'image3', 'cert', 'vbmeta']:
             if img not in self.new_json_data:
                 context.logger.info(f"manifest file does not contains {img}")
                 continue
@@ -173,6 +173,8 @@ class ManifestManager(ABC):
             context.logger.info(f"manifest file does not contains cert, will use image2 config for cert")
             self.cert = self.image2
         self.app_all = self.image2 #NOTE: APP_ALL used in compress image
+        if 'vbmeta' in self.new_json_data:
+            self.vbmeta = ManifestImageConfig(self.new_json_data['vbmeta'], ImageType.VBMETA)
 
     def validate_config(self, data:Union[str, dict]) -> bool:
         if isinstance(data, str):
@@ -224,13 +226,13 @@ class ManifestManager(ABC):
                     if value not in choices:
                         self.context.logger.error(f'{key} format error: should be one of {choices}')
                         return False
-                elif key in ["ctr_key", "rdp_key", "sboot_private_key", "sboot_public_key", "sboot_public_key_hash"]:
+                elif key in ["ctr_key", "rdp_key", "sboot_public_key_hash"]:
                     if isinstance(value, list):
                         if any(len(v) != 64 and len(v) != 32 for v in value):
                             self.context.logger.error(f'{key} format error: should be 32/64 bytes')
                             return False
                     elif len(value) != 64 and len(value) != 32 and value not in jdata:
-                        self.context.logger.error(f'{key} format error: should be 32/64 bytes: {value}')
+                        self.context.logger.error(f'{key} format error: should be 32/64 bytes: {value}, current len: {len(value)}')
                         return False
                 elif key.startswith("ecb_key"):
                     if isinstance(value, list):

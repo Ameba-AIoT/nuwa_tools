@@ -34,7 +34,7 @@ StxMaxDataLen = StxBaseLen + StxUsbDataLen
 DEFAULT_TIMEOUT = 0.5
 STX_TIMEOUT = 1
 
-FloaderDictionary = "devices/Floaders"
+FloaderDictionary = "Devices/Floaders"
 
 
 class RomHandler(object):

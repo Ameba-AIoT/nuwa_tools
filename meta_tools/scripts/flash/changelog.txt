@@ -18,3 +18,8 @@ ChangeLog:
 20250701  v1.0.3.0  (1) Support compatibility with MinGW path format
                     (2) Support customized DTR/RTS timing for reset/reburn
 20250703  v1.1.0.0  Support 1-N download/erase
+20251105  v1.1.1.0  (1) Support for remote server port download 
+                    (2) Set PostProcess as reset after flashing finished
+					(3) Add no_reset param
+					(4) Change some log level 
+					(5) Rename flashloader folder with Devices

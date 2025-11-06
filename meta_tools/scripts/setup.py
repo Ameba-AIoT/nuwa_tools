@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 # Copyright (c) 2024 Realtek Semiconductor Corp.
-# SPDX-License-Identifier: Apache-2.0 
+# SPDX-License-Identifier: Apache-2.0
 
 import argparse
 import glob
@@ -27,7 +27,7 @@ def run_shell_cmd_with_output(cmd):
 
 def update_git_hooks(cmd):
     rc = 0
-    
+
     try:
         repo_list = run_shell_cmd_with_output(cmd)
         if repo_list.returncode != 0:
@@ -66,6 +66,18 @@ def install_requirements(executable, requirements_path, label, env):
         print("Set up Nuwa SDK failed")
         sys.exit(2)
 
+def install_zephyr_deps_via_west(venv_python, env):
+    print("Install Zephyr requirements via 'west packages pip --install'...")
+    try:
+        subprocess.run([
+            venv_python, "-m", "west", "packages", "pip", "--install"
+        ], env=env, check=True)
+        print("Install Zephyr requirements via west done")
+    except subprocess.CalledProcessError as e:
+        print(f"Error: Install Zephyr requirements via 'west packages pip --install' failed ({e.returncode})")
+        print("Set up Nuwa SDK failed")
+        sys.exit(2)
+
 def main(argc, argv):
     parser = argparse.ArgumentParser(description=None)
     parser.add_argument('-g', '--update-git-hooks', action='store_true', help='update git hooks')
@@ -95,9 +107,19 @@ def main(argc, argv):
     env = os.environ.copy()
     env['PYTHONNOUSERSITE'] = 'True'
 
-    install_requirements(utils.VENV_PYTHON_EXECUTABLE,
-                         NUWA_SDK_ZEPHYR_REQUIREMENTS_PATH,
-                         "Zephyr", env)
+    print("Upgrading pip in virtual environment...")
+    try:
+        subprocess.run([utils.VENV_PYTHON_EXECUTABLE, "-m", "pip", "install", "--upgrade", "pip"],
+                       env=env, check=True, stdout=subprocess.DEVNULL)
+        print("pip upgraded successfully")
+    except subprocess.CalledProcessError as e:
+        print(f"Warning: Failed to upgrade pip (return code {e.returncode}), proceeding anyway...")
+
+    # install_requirements(utils.VENV_PYTHON_EXECUTABLE,
+    #                      NUWA_SDK_ZEPHYR_REQUIREMENTS_PATH,
+    #                      "Zephyr", env)
+    install_zephyr_deps_via_west(utils.VENV_PYTHON_EXECUTABLE, env)
+
     install_requirements(utils.VENV_PYTHON_EXECUTABLE,
                          NUWA_SDK_NUWA_REQUIREMENTS_PATH,
                          "Nuwa", env)
