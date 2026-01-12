@@ -54,17 +54,26 @@
     "chips": {
         "AmebaG2": {
             "core": "Cortex-M33",
-            "toolchain": "asdk-12.3.1-4431",
+            "ToolChainVerMajor": "asdk-12.3.1",
+            "ToolChainVerMinor": "4568",
+            "TOOLCHAINURL": "https://github.com/Ameba-AIoT/ameba-toolchain/releases/download/12.3.1_v3/",
+            "TOOLCHAINNAME": "-x86_64",
             "jlinkScript": "AmebaG2/AP2_AP.JLinkScript"
         },
         "AmebaDplus": {
             "core": "Cortex-M33",
-            "toolchain": "asdk-10.3.1-4354",
+            "ToolChainVerMajor": "asdk-10.3.1",
+            "ToolChainVerMinor": "4523",
+            "TOOLCHAINURL": "https://github.com/Ameba-AIoT/ameba-toolchain/releases/download/10.3.1_v6/",
+            "TOOLCHAINNAME": "-x86_64_with_small_reent",
             "jlinkScript": "amebadplus/AP2_KM4.JLinkScript"
         },
         "AmebaD": {
             "core": "Cortex-M33",
-            "toolchain": "asdk-10.3.1-4354",
+            "ToolChainVerMajor": "asdk-10.3.1",
+            "ToolChainVerMinor": "4523",
+            "TOOLCHAINURL": "https://github.com/Ameba-AIoT/ameba-toolchain/releases/download/10.3.1_v6/",
+            "TOOLCHAINNAME": "-x86_64_with_small_reent",
             "jlinkScript": "amebad/AP2_KM4.JLinkScript"
         }
     },

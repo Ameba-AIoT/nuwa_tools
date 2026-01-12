@@ -30,6 +30,21 @@ GCC_FROMELF = GCC_PREFIX + 'objcopy'
 GCC_STRIP = GCC_PREFIX + 'strip'
 GCC_NM = GCC_PREFIX + 'nm'
 
+def run_cmd(cmd, cwd=None, quiet=False):
+    try:
+        result = subprocess.run(
+            cmd,
+            shell=True,
+            cwd=cwd,
+            capture_output=True,
+            text=True
+        )
+        if not quiet:
+            print(f"[CMD] {' '.join(cmd) if isinstance(cmd, list) else cmd}")
+        return result.returncode, result.stdout, result.stderr
+    except Exception as e:
+        return -1, "", str(e)
+
 def main(argc, argv):
     parser = argparse.ArgumentParser(description=None)
     parser.add_argument('-a', '--app', help='application path')
@@ -58,18 +73,22 @@ def main(argc, argv):
 
     if args.toolchain_dir == None:
         if os.name == 'nt':
-            toolchain_dir = NUWA_SDK_TOOLCHAIN_DEFAULT_PATH_WINDOWS
+            toolchain_dir = Path(NUWA_SDK_TOOLCHAIN_DEFAULT_PATH_WINDOWS)
         else:
-            toolchain_dir = NUWA_SDK_TOOLCHAIN_DEFAULT_PATH_LINUX
-        print('No toolchain specified, use default toolchain: ' + toolchain_dir)
+            toolchain_dir = Path(NUWA_SDK_TOOLCHAIN_DEFAULT_PATH_LINUX)
+        print(f"No toolchain specified, use default toolchain: {toolchain_dir}")
     else:
-        toolchain_dir = os.path.normcase(args.toolchain_dir)
+        toolchain_dir = Path(os.path.normcase(args.toolchain_dir)).resolve()
 
     if os.path.exists(toolchain_dir):
         pass
     else:
-        print("Error: Toolchain '" + toolchain_dir + "' does not exist")
-        sys.exit(1)
+        print(f"Error: Toolchain '{toolchain_dir}' does not exist")
+        try:
+            toolchain_dir.mkdir(parents=True, exist_ok=True)
+            print(f"Create Toolchain Dir {toolchain_dir} Success")
+        except PermissionError:
+            sys.exit(f"Create Toolchain Dir Failed. May Not Have Permission!")
 
     if args.build_dir == None:
         build_dir = NUWA_SDK_DEFAULT_BUILD_DIR
@@ -103,22 +122,72 @@ def main(argc, argv):
     else:
         chip = cfg['devices'][args.device]['chip']
 
-    toolchain = cfg['chips'][chip]['toolchain']
+    toolchain_major = cfg['chips'][chip]['ToolChainVerMajor']
+    toolchain_minor = cfg['chips'][chip]['ToolChainVerMinor']
+    toolchain = toolchain_major + '-' + toolchain_minor
 
-    toolchain_path = None
     if os.name == 'nt':
-        toolchain_path = os.path.join(toolchain_dir, toolchain, 'mingw32', 'newlib')
+        toolchain_path = toolchain_dir / toolchain / 'mingw32' / 'newlib'
+        toolchain_name = toolchain_major + '-mingw32-newlib-build-' + toolchain_minor + cfg['chips'][chip]['TOOLCHAINNAME'] + '.zip'
     else:
-        toolchain_path = os.path.join(toolchain_dir, toolchain, 'linux', 'newlib')
+        toolchain_path = toolchain_dir / toolchain / 'linux' / 'newlib'
+        toolchain_name = toolchain_major + '-linux-newlib-build-' + toolchain_minor + cfg['chips'][chip]['TOOLCHAINNAME'] + '.tar.bz2'
 
-    if os.path.exists(toolchain_path):
+    if toolchain_path.exists():
         pass
     else:
-        print("Error: Toolchain '" + toolchain_path + "' does not exist")
-        sys.exit(1)
+        print(f"Error: Toolchain '{toolchain_path}' does not exist")
+
+        # toolchain_url = 'https://aiot.realmcu.com/download/toolchain/' + toolchain_name
+        toolchain_url = cfg['chips'][chip]['TOOLCHAINURL'] + '/' + toolchain_name
+        toolchain_archive = Path(toolchain_dir) / toolchain_name
+
+        if toolchain_archive.exists():
+            print(f"{toolchain_name} Had Existed, Verifying integrity ......")
+            print("Please waiting...")
+
+            if os.name == 'nt':
+                ret, _, _ = run_cmd(f"7z t '{toolchain_archive}'")
+                broken = bool(ret)
+            else:
+                ret, _, _ = run_cmd(f"tar -jtf '{toolchain_archive}'", quiet=True)
+                broken = bool(ret)
+
+            if broken:
+                toolchain_archive.unlink(missing_ok=True)
+                print("Integrity Verifying Failed. Delete and Redownload it...")
+            else:
+                print("Integrity Verifying success.")
+
+        if not toolchain_archive.exists():
+            print(f"Download {toolchain_name} ...")
+            ret, out, err = run_cmd(f"wget --progress=bar:force -P '{toolchain_dir}' {toolchain_url}")
+            if ret != 0:
+                sys.exit("Download Failed. Please Check If Wget Is Installed And Network Connection Is Accessible!")
+            print(f"Download {toolchain_name} Success")
+
+        print(f"Unzip {toolchain_name} ...")
+        extract_src_dir = toolchain_dir / toolchain_major
+        extract_dst_dir = toolchain_dir / f"{toolchain_major}-{toolchain_minor}"
+        if os.name == 'nt':
+            ret, _, _ = run_cmd(f"7z x '{toolchain_archive}' -o'{toolchain_dir}'")
+        else:
+            ret, _, _ = run_cmd(f"tar -jxf '{toolchain_archive}' -C '{toolchain_dir}'")
+        if ret != 0:
+            if extract_src_dir.exists():
+                shutil.rmtree(extract_src_dir)
+            sys.exit(f"Unzip Failed. Please unzip {toolchain_archive} manually.")
+        print(f"Unzip {toolchain_name} Success")
+
+        if extract_src_dir.exists():
+            if extract_dst_dir.exists():
+                shutil.rmtree(extract_dst_dir)
+            shutil.copytree(extract_src_dir, extract_dst_dir)
+            shutil.rmtree(extract_src_dir)
+        print("Toolchain install success")
 
     os.environ['ZEPHYR_TOOLCHAIN_VARIANT'] = 'gnuarmemb'
-    os.environ['GNUARMEMB_TOOLCHAIN_PATH'] = toolchain_path
+    os.environ['GNUARMEMB_TOOLCHAIN_PATH'] = f"{toolchain_path}"
 
     if args.clean:
         try:
