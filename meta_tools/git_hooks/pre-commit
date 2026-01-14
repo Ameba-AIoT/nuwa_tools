@@ -135,5 +135,47 @@ else
 	echo "Indent skipped"
 fi
 
+# ---------------------------------------------------------
+# General Text File Cleanup
+# Target: All Added(A), Copied(C), Modified(M), Renamed(R) text files
+# Actions:
+#   1. Remove trailing whitespace
+#   2. Ensure EOF newline
+# ---------------------------------------------------------
+changed_text_files=$(git diff-index --cached --name-only --diff-filter=ACMR $against)
+
+for f in $changed_text_files; do
+    # Check if file exists (handle edge cases)
+    if [ ! -f "$f" ]; then continue; fi
+
+    # Check ignore list (skip third_party etc.)
+    if echo "$f" | grep -E "$ignore_component_list" > /dev/null; then continue; fi
+
+    # Check if file is text (not binary)
+    # grep -Iq "" returns true (0) if file is text, false (1) if binary
+    if grep -Iq "" "$f"; then
+		echo "Trim trailing whitespace: $f"
+        # Action 1: Remove trailing whitespace
+		os=`uname -s`
+        if [ "$os" = "Darwin" ]; then
+            # MacOS sed requires empty string for backup extension
+            sed -i '' 's/[ \t]*$//' "$f"
+        else
+            # Linux/GNU sed
+            sed -i 's/[ \t]*$//' "$f"
+        fi
+
+        # Action 2: Ensure EOF newline
+        # Logic: If file is not empty AND the last character is NOT a newline (byte count after deleting newline > 0)
+        if [ -s "$f" ] && [ "$(tail -c 1 "$f" | tr -d '\n' | wc -c)" -gt 0 ]; then
+			echo "Add EOF newline: $f"
+            echo "" >> "$f"
+        fi
+
+        # Add file back to staging area
+        git add "$f"
+    fi
+done
+
 echo "Commit check done, no error detected"
 exit 0

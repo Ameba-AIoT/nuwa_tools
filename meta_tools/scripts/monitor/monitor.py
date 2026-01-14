@@ -35,7 +35,6 @@ key_description = miniterm.key_description
 
 TOOLCHAIN_DEFAULT_PATH_WINDOWS = r'C:\rtk-toolchain'
 TOOLCHAIN_DEFAULT_PATH_LINUX = '/opt/rtk-toolchain'
-SDK_QUERY_CFG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'query.json')
 REMOTE_PORT = 58916
 
 class Monitor():
@@ -82,7 +81,7 @@ class Monitor():
         self.logAGG_enabled = True if logAGG else False
         self.log_handler = LogHandler(self.elf_file, self.output_queue, timestamps, enable_address_decoding, toolchain_path,
                                       log_enabled, log_dir, port, logAGG, rom_elf_file=rom_file)
-
+                                      
         if self.target_os == "freertos":
             from base.coredump_freertos import CoreDump
             self.coredump = CoreDump(decode_coredumps, self.event_queue, self.log_handler, self.elf_file, self.rom_file,
@@ -188,7 +187,7 @@ class Monitor():
                     if not payload:
                         payload_str = ''
                     else:
-                        payload_str = payload.decode('utf-8')
+                        payload_str = payload.decode('utf-8', errors='ignore')
                     self.serial_handler.handle_serial_input(payload_str, self.coredump, src)
             else:
                 payload_str = self.serial_reader.decode(data)              
@@ -268,22 +267,6 @@ def main():
     parser = get_parser()
     args = parser.parse_args()
 
-    if os.path.exists(SDK_QUERY_CFG_FILE):
-        try:
-            with open(SDK_QUERY_CFG_FILE, "r") as f:
-                cfg = json.load(f)
-        except:
-            print_red('Fail to load query configuration file "' + SDK_QUERY_CFG_FILE + '"')
-            sys.exit(2)
-    else:
-        print_red('Note: Query configuration file "' + SDK_QUERY_CFG_FILE + '" does not exist')
-
-    if args.device is None:
-        print_red("Note: No device specified, monitor starts failed!")
-        sys.exit(1)
-    else:
-        device = args.device.lower()
-
     if args.decode_coredumps :
         if not args.toolchain_dir:
             print_red("Note: No toolchain_dir specified for decode-coredumps, monitor starts failed!")
@@ -311,8 +294,7 @@ def main():
         if not os.path.exists(args.toolchain_dir):
             print_red(f"Error: Toolchain '{args.toolchain_dir}' does not exist")
 
-    target_os = args.target_os or cfg["info"]["os"].lower()
-
+    target_os = args.target_os
     args.eol = args.eol or ("LF" if sys.platform == "linux" else "CRLF")
 
     elf_file = args.axf_file
@@ -369,7 +351,6 @@ def get_parser():
     parser.add_argument("-b", "--baud", type=int, default=1500000, help="Serial port baud rate, default is 1500000")
     parser.add_argument("--decode-coredumps", action="store_true",
                         help=f"If set will handle core dumps found in serial output. Default is False")
-    parser.add_argument("--device", help="Set device name.")
     parser.add_argument("--enable-address-decoding", action="store_true",
                         help="Print lines about decoded addresses from the application ELF file, default is False")
     parser.add_argument("--axf-file", nargs="?", help="AXF file of application")

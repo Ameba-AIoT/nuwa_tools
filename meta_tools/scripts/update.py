@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 # Copyright (c) 2024 Realtek Semiconductor Corp.
-# SPDX-License-Identifier: Apache-2.0 
+# SPDX-License-Identifier: Apache-2.0
 
 import argparse
 import glob
@@ -15,7 +15,7 @@ NUWA_SDK_GIT_HOOKS_DIR = 'tools/meta_tools/git_hooks'
 
 CMD_CLEAN_WORKSPACE = "west forall -c 'git reset --hard && git clean -fd'"
 CMD_UPDATE_MANIFEST = 'cd manifests && git pull && cd -'
-CMD_WEST_UPDATE = 'west update'
+CMD_WEST_UPDATE = 'west update -k -r'
 CMD_WEST_LIST = "west list | awk '{print $2}'"
 
 def run_shell_cmd_with_output(cmd):

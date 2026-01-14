@@ -18,6 +18,7 @@
 # limitations under the License.
 
 set -u
+MSG="$1"
 
 # avoid [[ which is not POSIX sh.
 if test "$#" != 1 ; then
@@ -27,6 +28,15 @@ fi
 
 if test ! -f "$1" ; then
   echo "file does not exist: $1"
+  exit 1
+fi
+
+merge_commit_msg1=$(cat "$MSG" | grep "^Merge branch '.*' of ")
+merge_commit_msg2=$(cat "$MSG" | grep "^# It looks like you may be committing a merge")
+merge_commit_msg3=$(cat "$MSG" | grep "^# Please enter a commit message to explain why this merge is necessary")
+if [ "X$merge_commit_msg1" != "X" ] || [ "X$merge_commit_msg2" != "X" ] || [ "X$merge_commit_msg3" != "X" ]
+then
+  echo "Merge commit is not allowed, please execute 'git config --global pull.rebase true' to enable rebase pull."
   exit 1
 fi
 

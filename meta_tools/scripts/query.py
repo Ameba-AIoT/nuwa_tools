@@ -101,8 +101,6 @@ def do_query_device(cfg):
         chip_cfg = cfg['chips'][value['chip']]
         value['core'] = chip_cfg['core']
         value['target'] = os.path.join('zephyr','zephyr.elf')
-        value['toolchain'] = chip_cfg['toolchain']
-        value['jlinkScript'] = os.path.join('tools', 'meta_tools', 'scripts', 'jlink_scripts', os.path.normcase(chip_cfg['jlinkScript']))
         value['path'] = os.path.normcase(value['path'])
         devices[key] = value
     ret = json.dumps(devices, indent=4)

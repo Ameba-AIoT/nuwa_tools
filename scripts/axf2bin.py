@@ -8,7 +8,7 @@ import sys
 import importlib.util
 
 missing_modules = []
-for module in ['json5']:
+for module in ['json5', 'click']:
     if importlib.util.find_spec(module) is None:
         missing_modules.append(module)
 if missing_modules:
@@ -36,6 +36,7 @@ from image_process.op_prepend_header import PrependHeader as op_prepend_header
 from image_process.op_rdp import Rdp as op_rdp
 from image_process.op_rsip import Rsip as op_rsip
 from image_process.op_cut import Cut as op_cut
+from image_process.op_helper import Helper as op_helper
 
 def parse_args():
     parser = argparse.ArgumentParser(description=None)

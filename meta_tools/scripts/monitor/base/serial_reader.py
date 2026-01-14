@@ -16,11 +16,28 @@ from .constants import ASYNC_CLOSING_WAIT_NONE, CHECK_ALIVE_FLAG_TIMEOUT, RECONN
 from .color_output import print_red, print_yellow
 from .stoppable_thread import StoppableThread
 import os
-from .remote_serial import RemoteSerial
 import logging
 from typing import Optional, Dict, Any
 from .console_reader import console_update_session
 import re
+from pathlib import Path
+
+current_script_path = Path(__file__).resolve().parent
+remote_service_path = current_script_path.parent.parent / 'RemoteService'
+
+RemoteSerial = None
+
+if remote_service_path.exists():
+    sys.path.insert(0, str(remote_service_path))
+
+    try:
+        from remote_serial import RemoteSerial
+    except ImportError as e:
+        RemoteSerial = None
+        print(f"error: RemoteSerial ImportError: ", str(e))
+    except Exception as e:
+        RemoteSerial = None
+        print(f"error: RemoteSerial ImportException: ", str(e))
 
 class SerialReader(StoppableThread):
     """
@@ -80,7 +97,7 @@ class SerialReader(StoppableThread):
         start_time = time.time()
         while self.running:
             try:
-                if isinstance(self.serial, RemoteSerial):
+                if RemoteSerial and isinstance(self.serial, RemoteSerial):
                     while self.serial.inWaiting() < 1:
                         time.sleep(0.01)
                         if self.expired(start_time):
@@ -102,23 +119,58 @@ class SerialReader(StoppableThread):
                     print(f"[Received Data (Hex)]: {hex_str}")
 
                 self.data_buffer += data
-                if b'AT+LIST' in self.data_buffer:
-                    if b'#' in self.data_buffer:
-                        self.parse_cmd_list(self.data_buffer)
+                filtered = re.sub(rb'\xff.', b'', self.data_buffer)
+                if b'AT+LIST' in filtered:
+                    if b'#' in filtered:
+                        self.parse_cmd_list(filtered)
                         self.data_buffer = b''
                         break
             except Exception as e:
-                print_red(f"Failed to get cmd list: {str(e)}")
                 break
         if self.reset_mode:
             try:
                 self.event_queue.put((TAG_KEY, 'reboot\r\n'), True) # Send reboot command (manually add \r\n)
             except Exception as e:
                 print_red(f"Failed to send reboot command: {str(e)}")
-        self.data_buffer = b''
+
+            self.data_buffer = b''
+            start_time = time.time()
+            while self.running:
+                try:
+                    if RemoteSerial and isinstance(self.serial, RemoteSerial):
+                        while self.serial.inWaiting() < 1:
+                            time.sleep(0.01)
+                            if self.expired(start_time):
+                                raise Exception("Reset expired")
+                        if self.expired(start_time):
+                            raise Exception("Reset expired")
+                        data = self.serial.read(self.serial.inWaiting())
+                    else:
+                        if self.expired(start_time):
+                            raise Exception("Reset expired")
+                        data = self.serial.read(1)
+                        if not data:
+                            continue
+                        data += self.serial.read(self.serial.in_waiting)
+
+                    # Display raw byte data in debug mode
+                    if self.debug:
+                        hex_str = ' '.join(f'{b:02X}' for b in data)
+                        print(f"[Received Data (Hex)]: {hex_str}")
+
+                    self.data_buffer += data
+                    filtered = re.sub(rb'\xff.', b'', self.data_buffer)
+                    if b'reboot' in filtered:
+                        if b'BOOT-I' in filtered:
+                            break
+                except Exception as e:
+                    print_red(f"Failed to reset, pelase reset manually: {str(e)}")
+                    self.data_buffer = b''
+                    break
+
         while self.running:
             try:
-                if isinstance(self.serial, RemoteSerial):
+                if RemoteSerial and isinstance(self.serial, RemoteSerial):
                     while self.serial.inWaiting() < 1:
                         time.sleep(0.01)
                     data = self.serial.read(self.serial.inWaiting())
@@ -204,6 +256,9 @@ class SerialReader(StoppableThread):
         try:
             if self.remote_server and self.remote_port:
                 # print_yellow(f"Connect to remote serial server: {self.remote_server}:{self.remote_port} (Serial port: {self.port})")
+                if RemoteSerial is None:
+                    print_yellow(f"RemoteSerial doesn't exists at: {remote_service_path}")
+                    sys.exit(1)
                 self.serial = RemoteSerial(
                         remote_server=self.remote_server,
                         remote_port=self.remote_port,
@@ -213,6 +268,7 @@ class SerialReader(StoppableThread):
                 )
                 if self.remote_password:
                     self.serial.validate(self.remote_password)
+                    self.serial.query_version()
                 self.serial.open()
             else:
                 self.serial = serial.Serial(

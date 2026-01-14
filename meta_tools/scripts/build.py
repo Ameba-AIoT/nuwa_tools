@@ -16,6 +16,7 @@ from pathlib import Path
 import base.rtk_utils as utils
 
 NUWA_SDK_QUERY_CFG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'query.json')
+NUWA_SDK_TOOLCHAIN_FILE = os.path.join('modules', 'hal', 'realtek', 'ameba', 'scripts', 'toolchain_db.json')
 NUWA_SDK_DEFAULT_IMAGE_DIR = 'images'
 NUWA_SDK_DEFAULT_BUILD_DIR = 'build'
 NUWA_SDK_SOC_PROJECT_DIR = os.path.join('tools', 'meta_tools', 'scripts', 'soc_project')
@@ -54,6 +55,8 @@ def main(argc, argv):
     parser.add_argument('-t', '--toolchain-dir', help='toolchain directory')
     parser.add_argument('-p', '--pristine', action='store_true', help='pristine build')
     parser.add_argument('-c', '--clean', action='store_true', help='clean the build')
+    parser.add_argument('--sysbuild', action='store_true', help='create multi domain build system')
+    parser.add_argument('remainder', nargs=argparse.REMAINDER, help='cmake options passthrough to west')
 
     args = parser.parse_args()
 
@@ -115,76 +118,64 @@ def main(argc, argv):
         sys.exit(1)
 
     chip = None
-    if args.device not in cfg['devices'].keys():
+    # Support board variant, refer to:
+    # https://docs.zephyrproject.org/latest/hardware/porting/board_porting.html#board-terminology
+    device = args.device.split("/")[0]
+    if device not in cfg['devices'].keys():
         print('Error: Unsupported device "' + args.device + '", valid values: ')
         [print(key) for key in cfg['devices'].keys()]
         sys.exit(1)
     else:
-        chip = cfg['devices'][args.device]['chip']
+        chip = cfg['devices'][device]['chip']
 
-    toolchain_major = cfg['chips'][chip]['ToolChainVerMajor']
-    toolchain_minor = cfg['chips'][chip]['ToolChainVerMinor']
+    toolchain_db = None
+    if os.path.exists(NUWA_SDK_TOOLCHAIN_FILE):
+        try:
+            with open(NUWA_SDK_TOOLCHAIN_FILE, 'r') as f:
+                toolchain_db = json.load(f)
+        except Exception:
+            print('Error: Fail to load toolchain configuration file "' + NUWA_SDK_TOOLCHAIN_FILE + '"')
+            sys.exit(2)
+    else:
+        print('Error: Toolchain configuration file "' + NUWA_SDK_TOOLCHAIN_FILE + '" does not exist')
+        sys.exit(1)
+
+    toolchain_id = None
+    for k, v in toolchain_db.items():
+        if isinstance(v, dict):
+            devs = v.get('devices', [])
+            if device in devs:
+                toolchain_id = k
+                break
+
+    if toolchain_id is None:
+        print('Error: Unsupported device "' + device + '" in toolchain file "' + NUWA_SDK_TOOLCHAIN_FILE + '"')
+        sys.exit(1)
+
+    toolchain_major, toolchain_minor = toolchain_id.rsplit('-', 1)
     toolchain = toolchain_major + '-' + toolchain_minor
 
     if os.name == 'nt':
         toolchain_path = toolchain_dir / toolchain / 'mingw32' / 'newlib'
-        toolchain_name = toolchain_major + '-mingw32-newlib-build-' + toolchain_minor + cfg['chips'][chip]['TOOLCHAINNAME'] + '.zip'
     else:
         toolchain_path = toolchain_dir / toolchain / 'linux' / 'newlib'
-        toolchain_name = toolchain_major + '-linux-newlib-build-' + toolchain_minor + cfg['chips'][chip]['TOOLCHAINNAME'] + '.tar.bz2'
 
     if toolchain_path.exists():
         pass
     else:
         print(f"Error: Toolchain '{toolchain_path}' does not exist")
 
-        # toolchain_url = 'https://aiot.realmcu.com/download/toolchain/' + toolchain_name
-        toolchain_url = cfg['chips'][chip]['TOOLCHAINURL'] + '/' + toolchain_name
-        toolchain_archive = Path(toolchain_dir) / toolchain_name
-
-        if toolchain_archive.exists():
-            print(f"{toolchain_name} Had Existed, Verifying integrity ......")
-            print("Please waiting...")
-
-            if os.name == 'nt':
-                ret, _, _ = run_cmd(f"7z t '{toolchain_archive}'")
-                broken = bool(ret)
-            else:
-                ret, _, _ = run_cmd(f"tar -jtf '{toolchain_archive}'", quiet=True)
-                broken = bool(ret)
-
-            if broken:
-                toolchain_archive.unlink(missing_ok=True)
-                print("Integrity Verifying Failed. Delete and Redownload it...")
-            else:
-                print("Integrity Verifying success.")
-
-        if not toolchain_archive.exists():
-            print(f"Download {toolchain_name} ...")
-            ret, out, err = run_cmd(f"wget --progress=bar:force -P '{toolchain_dir}' {toolchain_url}")
-            if ret != 0:
-                sys.exit("Download Failed. Please Check If Wget Is Installed And Network Connection Is Accessible!")
-            print(f"Download {toolchain_name} Success")
-
-        print(f"Unzip {toolchain_name} ...")
-        extract_src_dir = toolchain_dir / toolchain_major
-        extract_dst_dir = toolchain_dir / f"{toolchain_major}-{toolchain_minor}"
-        if os.name == 'nt':
-            ret, _, _ = run_cmd(f"7z x '{toolchain_archive}' -o'{toolchain_dir}'")
-        else:
-            ret, _, _ = run_cmd(f"tar -jxf '{toolchain_archive}' -C '{toolchain_dir}'")
-        if ret != 0:
-            if extract_src_dir.exists():
-                shutil.rmtree(extract_src_dir)
-            sys.exit(f"Unzip Failed. Please unzip {toolchain_archive} manually.")
-        print(f"Unzip {toolchain_name} Success")
-
-        if extract_src_dir.exists():
-            if extract_dst_dir.exists():
-                shutil.rmtree(extract_dst_dir)
-            shutil.copytree(extract_src_dir, extract_dst_dir)
-            shutil.rmtree(extract_src_dir)
-        print("Toolchain install success")
+        install_cmd = [
+            utils.VENV_PYTHON_EXECUTABLE, "-m", "west", "realtek", "ameba", "install", "-t", toolchain
+        ]
+        
+        try:
+            subprocess.run(install_cmd, check=True, text=True)
+            print("toolchain install successful")
+        except subprocess.CalledProcessError as e:
+            print("toolchain install failed")
+            print("Error:", e.stderr)
+            sys.exit(1)
 
     os.environ['ZEPHYR_TOOLCHAIN_VARIANT'] = 'gnuarmemb'
     os.environ['GNUARMEMB_TOOLCHAIN_PATH'] = f"{toolchain_path}"
@@ -210,7 +201,13 @@ def main(argc, argv):
     else:
         build_cmd.extend(["-p", "auto"])
 
+    if args.sysbuild:
+        build_cmd.extend(["--sysbuild"])
+
     build_cmd.append(args.app)
+
+    if args.remainder:
+        build_cmd.extend(args.remainder)
 
     try:
         subprocess.run(build_cmd, check=True, text=True)
@@ -223,8 +220,12 @@ def main(argc, argv):
     if os.path.exists(image_dir):
         shutil.rmtree(image_dir)
 
-    if args.device in cfg['devices'].keys():
-        shutil.copytree(Path(build_dir) / 'images', Path(image_dir), dirs_exist_ok=True)
+    if device in cfg['devices'].keys():
+        if args.sysbuild:
+            shutil.copytree(Path(build_dir) / os.path.basename(args.app) / 'images', Path(image_dir), dirs_exist_ok=True)
+            shutil.copytree(Path(build_dir) / 'mcuboot' / 'images', Path(image_dir), dirs_exist_ok=True)
+        else:
+            shutil.copytree(Path(build_dir) / 'images', Path(image_dir), dirs_exist_ok=True)
         print('Image location: ' + os.path.join(os.getcwd(), image_dir))
     else:
         print('Error: Unsupported device "' + args.device + '"')

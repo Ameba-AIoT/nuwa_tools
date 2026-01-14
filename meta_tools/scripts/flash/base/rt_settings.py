@@ -36,10 +36,11 @@ class RtSettings():
         self.program_config2 = kwargs.get("ProgramConfig2", 0)
         self.disable_nand_access_with_uart = kwargs.get("DisableNandAccessWithUart", 0)
         self.ram_download_padding_byte = kwargs.get("RamDownloadPaddingByte", 0x00)
-        self.auto_program_spic_addr_mode_4byte = kwargs.get("AutoProgramSpicAddrMode4Byte", 0)
+        self.auto_program_spic_addr_mode_4byte = kwargs.get("AutoProgramSpicAddrMode4Byte", 1)
         self.auto_switch_to_download_mode_with_dtr_rts_file = kwargs.get("AutoSwitchToDownloadModeWithDtrRtsTimingFile", "Reburn.cfg")
         self.auto_reset_device_with_dtr_rts_file = kwargs.get("AutoResetDeviceWithDtrRtsTimingFile", "Reset.cfg")
         self.post_process = kwargs.get("PostProcess", "RESET")
+        self.serial_initial_read_timeout_in_second = round(kwargs.get("SerialInitialReadTimeoutInMillisecond", 20) / 1000, 2)
 
     def __repr__(self):
         profile_dict = {
@@ -52,6 +53,7 @@ class RtSettings():
             "RomBootDelayInMillisecond": int(self.rom_boot_delay_in_second * 1000),
             "UsbRomBootDelayInMillisecond": int(self.usb_rom_boot_delay_in_second * 1000),
             "UsbFloaderBootDelayInMillisecond": int(self.usb_floader_boot_delay_in_second * 1000),
+            "SerialInitialReadTimeoutInMillisecond": int(self.serial_initial_read_timeout_in_second * 1000),
             "SwitchBaudrateAtFloader": self.switch_baudrate_at_floader,
             "WriteResponseTimeoutInMillisecond": int(self.write_response_timeout_in_second * 1000),
             "FloaderBootDelayInMillisecond": int(self.floader_boot_delay_in_second * 1000),

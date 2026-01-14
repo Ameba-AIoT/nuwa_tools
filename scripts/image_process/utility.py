@@ -7,6 +7,8 @@ from functools import wraps
 from typing import Callable, Union
 import traceback
 import hashlib
+import click
+import copy
 
 from ameba_enums import *
 
@@ -164,15 +166,32 @@ def parse_project_info(path:str) -> dict:
     #      3. /path/to/amebaxxx_gcc_project/project_abc         => soc_project: amebaxxx, mcu_project: abc
     #      4. /path/to/amebaxxx_gcc_project/project_abc/build   => soc_project: amebaxxx, mcu_project: abc
     #      5. case 1~4 but "/path/to" contains utils/release_tool (release build)
+    #      6. /path/to/component/soc/amebaxxx/project                     => soc_project: amebaxxx, mcu_project: empty
+    #      7. /path/to/component/soc/amebaxxx/project/project_abc         => soc_project: amebaxxx, mcu_project: abc
+    #      8. /path/to/build_xxx/build/project_abc                    => soc_name: xxx, mcu_project: abc
+    need_parsesoc = 0
     if "utils/release_tool" in path:
         pattern = r'(.*?/utils/release_tool/.*?/(\w+)_gcc_project)(?:/build)?(?:/project_(\w+))?(?:/|$)'
     else:
-        pattern = r'(.*?/(\w+)_gcc_project)(?:/build)?(?:/project_(\w+))?(?:/|$)'
+        if '_gcc_project' in path:
+            pattern = r'(.*?/(\w+)_gcc_project)(?:/build)?(?:/project_(\w+))?(?:/|$)'
+        elif 'build_' in path:
+            pattern = r'(.*?/build_(\w+))(?:/build/project_(\w+))?(?:/|$)'
+            need_parsesoc = 1
+        else:
+            pattern = r'(.*?/component/soc/(\w+)/project)(?:/project_(\w+))?(?:/|$)'
     match = re.search(pattern, path)
 
     if match:
-        soc_dir = match.group(1)
-        soc_project = match.group(2)
+        if need_parsesoc:
+            from ameba_soc_utils import SocManager
+            manager = SocManager()
+            soc_name = match.group(2)
+            soc_dir = manager._parse_project_path(soc_name) # component/soc/xxx/project
+            soc_project = os.path.basename(os.path.dirname(soc_dir)) if soc_dir else ''
+        else:
+            soc_dir = match.group(1)
+            soc_project = match.group(2)
         mcu_project = match.group(3) if match.group(3) else ''
     else:
         soc_dir = ''
@@ -190,16 +209,10 @@ def parse_project_info(path:str) -> dict:
                         pass
                     else:
                         default_logger.warning(f"File maybe not in right location: file name: {os.path.basename(path)}, mcu project from path: {mcu_project}")
-        else: # add for zephyr build
-            mcu_same_list=['km0', 'km4', 'ca32', 'kr4']
-            for mcu in mcu_same_list:
-                if mcu in file_body:
-                    mcu_project = mcu.lower()
-                    break
-            for key, value in mcu_dicts.items():
-                if key in file_body:
-                    mcu_project = key.lower()
-                    break
+        else:
+            # add for zephyr build, Extract mcu_project from filename pattern: xxxx_imagey_all.bin -> xxxx
+            if '_' in file_body:
+                mcu_project = file_body.split('_')[0].lower()
             if mcu_project == '':
                 default_logger.fatal(f"Failed to get mcu project from file name: {os.path.basename(path)}")
 
@@ -242,7 +255,7 @@ def parse_map_file(file_path:str, symbol:str) -> tuple:
         with open(file_path, 'r') as file:
             for line in file:
                 columns = line.strip().split()
-                if columns[2] == symbol:
+                if len(columns) >= 3 and columns[2] == symbol:
                     return tuple(columns)
     return ('0', '?', symbol)
 
@@ -301,3 +314,33 @@ def get_file_md5sum(file_path):
 
 def get_file_dir(file_path):
     return os.path.dirname(os.path.abspath(file_path))
+
+def manifest_preprocess(origin_data):
+    new_data = copy.deepcopy(origin_data)
+    # Add key from outside(global config) of image part if key not in image part
+    for img in ['image1', 'image2', 'image3', 'cert', 'vbmeta']:
+        if img not in new_data:
+            default_logger.info(f"manifest file does not contains {img}")
+            continue
+        #优先级: image内部直接定义>inherit_from>外部的全局定义
+        if "inherit_from" in new_data[img]:
+            for key, value in new_data[new_data[img]["inherit_from"]].items():
+                if key not in new_data[img]:
+                    new_data[img][key] = value
+        for key, value in origin_data.items():
+            if isinstance(value, dict): continue
+
+            if key not in new_data[img]:
+                new_data[img][key] = value
+    return new_data
+
+class BasedIntParamType(click.ParamType):
+    name = 'integer'
+
+    def convert(self, value, param, ctx):
+        try:
+            return int(value, 0)
+        except ValueError:
+            self.fail('%s is not a valid integer. Please use code literals '
+                      'prefixed with 0b/0B, 0o/0O, or 0x/0X as necessary.'
+                      % value, param, ctx)
