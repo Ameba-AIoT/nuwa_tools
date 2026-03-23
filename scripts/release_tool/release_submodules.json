@@ -1,6 +1,0 @@
-{
-    "audio": ["component/audio"],
-    "ui": ["component/ui"],
-    "aivoice": ["component/aivoice"],
-    "tflite_micro": ["component/tflite_micro"]
-}
