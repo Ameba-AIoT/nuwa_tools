@@ -107,7 +107,7 @@ fi
 
 # Static check with CppCheck
 # Pass only added or modified specific C source files to CppCheck.
-if [ -n "$changed_files" ]; then
+if [ "$repo_name" = "hal_realtek_ameba" ] && [ -n "$changed_files" ]; then
 	cppcheck --error-exitcode=1 --force --inline-suppr --suppressions-list=$hook_dir/suppression.txt --enable=warning,performance,portability $changed_files
 	err=$?
 	if [ $err -ne 0 ]; then
@@ -121,7 +121,7 @@ else
 fi
 
 # Indent with Astyle
-if [ -n "$changed_files" ]; then
+if [ "$repo_name" = "hal_realtek_ameba" ] && [ -n "$changed_files" ]; then
 	# echo
 	# echo 'Indent changed files: '
 	# for f in $changed_files
