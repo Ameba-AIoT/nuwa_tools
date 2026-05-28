@@ -411,7 +411,23 @@ def main(argc, argv):
         shutil.copy(os.path.join(NUWA_SDK_SOC_PROJECT_DIR, 'amebapro2', 'amebapro2_partitiontable.json'), target_dir)
         cmd = [elf2bin, 'convert', 'amebapro2_partitiontable.json', 'PARTITIONTABLE', 'partition.bin']
         subprocess.run(cmd, cwd=target_dir)
-        cmd = [elf2bin, 'combine', 'amebapro2_partitiontable.json', 'flash_zephyr.bin', 'PT_PT=partition.bin,CER_TBL=certable.bin,KEY_CER1=certificate.bin,PT_BL_PRI=boot.bin,PT_FW1=firmware_zephyr.bin,PT_ISP_IQ=firmware_isp_iq.bin']
+
+        nn_part = ''
+        if os.path.normpath(args.app) == os.path.normpath(os.path.join('platform', 'samples', 'npu')):
+            npu_model_dir = Path('platform') / 'samples' / 'npu' / 'src' / 'model_binary'
+            npu_models = sorted(npu_model_dir.glob('*.nb'))
+            if not npu_models:
+                print("Error: No NPU model '*.nb' files found in '" + str(npu_model_dir) + "'")
+                sys.exit(1)
+            for npu_model in npu_models:
+                shutil.copy(npu_model, target_dir)
+            shutil.copy(os.path.join(NUWA_SDK_SOC_PROJECT_DIR, 'amebapro2', 'amebapro2_fwfs_nn_models.json'), target_dir)
+            shutil.copy(os.path.join(NUWA_SDK_SOC_PROJECT_DIR, 'amebapro2', 'amebapro2_nn_model.json'), target_dir)
+            subprocess.run([elf2bin, 'convert', 'amebapro2_fwfs_nn_models.json', 'FWFS', 'fwfs_nn_model.bin'], cwd=target_dir)
+            subprocess.run([elf2bin, 'convert', 'amebapro2_nn_model.json', 'FIRMWARE', 'nn_model.bin'], cwd=target_dir)
+            nn_part = ',PT_NN_MDL=nn_model.bin'
+
+        cmd = [elf2bin, 'combine', 'amebapro2_partitiontable.json', 'flash_zephyr.bin', 'PT_PT=partition.bin,CER_TBL=certable.bin,KEY_CER1=certificate.bin,PT_BL_PRI=boot.bin,PT_FW1=firmware_zephyr.bin,PT_ISP_IQ=firmware_isp_iq.bin' + nn_part]
         subprocess.run(cmd, cwd=target_dir)
     else:
         print('Error: Unsupported device "' + args.device + '"')

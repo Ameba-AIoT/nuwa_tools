@@ -1,0 +1,20 @@
+{
+	"msg_level":3,
+
+	"PROFILE":["FWFS"],
+	"FWFS":{
+		"files":[
+			"scrfd320p"
+		]
+	},
+	"scrfd320p":{
+		"name" : "scrfd.nb",
+		"source":"binary",
+		"file":"scrfd_500m_bnkps_576x320_u8.nb"
+	},
+	"yolov4_tiny":{
+		"name" : "yolov4_tiny.nb",
+		"source":"binary",
+		"file":"yolov4_tiny.nb"
+	}
+}
