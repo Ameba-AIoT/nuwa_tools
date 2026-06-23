@@ -8,7 +8,7 @@ import os
 import subprocess
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
-MONITOR_TOOL = os.path.realpath(os.path.join(script_dir, "../ameba/Monitor/monitor.py"))
+MONITOR_TOOL = os.path.realpath(os.path.join(script_dir, "..", "ameba", "Monitor", "monitor.py"))
 
 def run_monitor(argv):
     cmds = [sys.executable, MONITOR_TOOL] + argv
@@ -44,7 +44,7 @@ def main():
     parser.add_argument('-p', '--port', help='Serial port name, e.g., COM3 (Windows) or /dev/ttyUSB0 (Linux)')
     parser.add_argument('-b', '--baudrate', type=int, help='Serial baud rate, e.g., 9600, 115200')
     parser.add_argument('-reset', action='store_true',
-                       help='Enable reset mode: Wait 100ms after connection to send "reboot" command, start output only after detecting "ROM:["')
+                       help='Enable reset mode: Try soft reset first (send "reboot" command), if fails then try hard reset (DTR/RTS), start output after detecting "ROM:["')
     parser.add_argument('-debug', action='store_true',
                        help='Enable debug mode: Display raw hexadecimal data of sent and received bytes')
     parser.add_argument('--remote-server', type=str, help='remote serial server IP address')
@@ -63,7 +63,13 @@ def main():
     parser.add_argument('--logAGG', nargs='+',
                         help='the logAGG enabled and source marked ')
     parser.add_argument("--ca32", action="store_true", help="If core is ca32, should set this.")
-
+    parser.add_argument('--no-console', action='store_true',
+                        help='Disable prompt toolkit TUI and read commands from stdin pipe')
+    parser.add_argument('--chip', default=None,
+                        help='Optional chip name (case-insensitive), example value: RTL8730E, rtl8730e. Enables AGG parsing '
+                             'and remaps path tags; --logAGG takes higher priority when both '
+                             'are supplied. Chips without AGG and unknown '
+                             'chips fall back to Core0/Core1/Core2 tags.')
     args = parser.parse_args()
 
     port = args.port
@@ -119,7 +125,11 @@ def main():
         cmds.append(f"{args.toolchain_dir}")
     if args.ca32:
         cmds.append("--ca32")
-
+    if args.no_console:
+        cmds.append("--no-console")
+    if args.chip:
+        cmds.append("--chip")
+        cmds.append(args.chip)
     run_monitor(cmds)
 
 if __name__ == "__main__":

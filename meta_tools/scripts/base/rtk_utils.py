@@ -17,6 +17,27 @@ def get_venv_python_executable(venv_dir):
 VENV_PYTHON_EXECUTABLE = get_venv_python_executable(NUWA_SDK_VENV_DIR)
 
 
+def _venv_env():
+    env = os.environ.copy()
+    env['PYTHONNOUSERSITE'] = 'True'
+    return env
+
+
+def run_west(args, cwd=None, env=None, check=True, capture_output=False):
+    command = [VENV_PYTHON_EXECUTABLE, '-m', 'west'] + list(args)
+    merged_env = _venv_env()
+    if env:
+        merged_env.update(env)
+    return subprocess.run(
+        command,
+        cwd=cwd,
+        env=merged_env,
+        check=check,
+        text=True,
+        capture_output=capture_output,
+    )
+
+
 def _file_hash(path):
     h = hashlib.md5()
     with open(path, 'rb') as f:

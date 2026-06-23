@@ -100,12 +100,14 @@ soc_configs:Dict[str, SocImageConfig] = {
             "ap": "CA32_IMG2",
             "np": "KM4NP_IMG2",
             "fp": "KM0_IMG2",
-            "mp": "KM4MP_IMG2",
+            "vp": "KM4VP_IMG2",
         },
         image3_section = None, #Not support rsip yet(maybe only support rdp)
         dsp_section = None
     ),
 }
+
+soc_configs["amebag2"] = soc_configs["amebagreen2"]
 
 class FirmwarePackage(OperationBase):
     cmd_help_msg = 'Generate final firmware image'
@@ -208,9 +210,9 @@ class FirmwarePackage(OperationBase):
     def process_fullmac_image(self) -> Error:
         #Final output file's structure
         # ┌───────────────────────────┐
-        # │       manifest.bin        │
-        # ├───────────────────────────┤
         # │ fullmac_ram_1_prepend.bin │
+        # ├───────────────────────────┤
+        # │       manifest.bin        │
         # └───────────────────────────┘
 
         manifest_file_name = os.path.join(self.output_image_dir, 'manifest_fullmac_image.bin') #output manifest file
@@ -219,7 +221,7 @@ class FirmwarePackage(OperationBase):
             self.logger.fatal("Failed generating manifest file")
             return res
         #NOTE: manifest file is behind input file
-        merge_files(self.output_file, manifest_file_name, self.context.args.fullmac_image)  # merge_files api will overwrite output_file file
+        merge_files(self.output_file, self.context.args.fullmac_image, manifest_file_name)  # merge_files api will overwrite output_file file
         return Error.success()
 
     def process_imgtool_floader(self) -> Error:

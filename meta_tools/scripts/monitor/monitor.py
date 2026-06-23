@@ -16,20 +16,20 @@ import colorama
 import serial
 from serial.tools import list_ports, miniterm
 from colorama.initialise import wrap_stream
-from typing import Union
+from typing import Any, Dict, List, Optional, Union
 
 from base import __version__
 from base.console_parser import ConsoleParser
 from base.console_reader import ConsoleReader
+from base.stdin_cmd_reader import StdinCmdReader
 from base.constants import CTRL_C, CTRL_H, EVENT_QUEUE_TIMEOUT, LAST_LINE_THREAD_INTERVAL, TAG_CMD, TAG_KEY, TAG_SERIAL, \
     TAG_SERIAL_FLUSH, CMD_STOP
 from base.key_config import EXIT_KEY, EXIT_MENU_KEY, MENU_KEY
 from base.log_handler import LogHandler
-from base.color_output import print_normal, print_yellow, print_red
+from base.chip_info import IC_LIST, normalize_chip_name as _normalize_chip_name
+from base.color_output import print_normal, print_yellow, print_red, set_diag_to_stderr
 from base.serial_handler import SerialHandler, SerialStopException
 from base.serial_reader import LinuxReader, SerialReader
-from typing import Optional, Dict, Any, List
-import os
 
 key_description = miniterm.key_description
 
@@ -67,7 +67,9 @@ class Monitor():
             remote_password: Optional[str] = None,
             log_enabled: bool = False,
             log_dir: Optional[List[str]] = None,
-            logAGG: Optional[List[str]] = None
+            logAGG: Optional[List[str]] = None,
+            no_console: bool = False,
+            chip: Optional[str] = None,
     ):
         self.event_queue = queue.Queue()
         self.cmd_queue = queue.Queue()
@@ -78,16 +80,22 @@ class Monitor():
         self.rom_file = rom_file or ""
         self.elf_exists = os.path.exists(self.elf_file)
         self.debug = debug
-        self.logAGG_enabled = True if logAGG else False
+        self.no_console = no_console
+        set_diag_to_stderr(no_console)
+        # Either flag enables AGG parsing. When both are supplied, --logAGG wins
+        # everywhere (tags + bitmask); --chip is only used when --logAGG is absent.
+        if chip and chip not in IC_LIST:
+            print_yellow(f"Warning: unknown chip '{chip}', falling back to Core0/Core1/Core2 tags.")
+        self.logAGG_enabled = True if (logAGG or chip) else False
         self.log_handler = LogHandler(self.elf_file, self.output_queue, timestamps, enable_address_decoding, toolchain_path,
-                                      log_enabled, log_dir, port, logAGG, rom_elf_file=rom_file)
-                                      
-        if self.target_os == "freertos":
-            from base.coredump_freertos import CoreDump
+                                      log_enabled, log_dir, port, logAGG, rom_elf_file=rom_file, chip=chip)
+
+        if self.target_os == "freertos" and self.is_ca32:
+            from base.coredump_freertos_ca32 import CoreDump
             self.coredump = CoreDump(decode_coredumps, self.event_queue, self.log_handler, self.elf_file, self.rom_file,
                                      toolchain_path) if self.elf_exists else None
-        elif self.target_os == "freertos" and self.is_ca32:
-            from base.coredump_freertos_ca32 import CoreDump
+        elif self.target_os == "freertos":
+            from base.coredump_freertos import CoreDump
             self.coredump = CoreDump(decode_coredumps, self.event_queue, self.log_handler, self.elf_file, self.rom_file,
                                      toolchain_path) if self.elf_exists else None
         elif self.target_os == "zephyr":
@@ -104,7 +112,8 @@ class Monitor():
         if isinstance(self, SerialMonitor):
             self.serial_reader = SerialReader(port, baudrate, self.event_queue,
                                               reset_mode=reset_mode, debug=debug,
-                                              remote_server=remote_server, remote_port=remote_port, remote_password=remote_password)
+                                              remote_server=remote_server, remote_port=remote_port,
+                                              remote_password=remote_password)
 
         else:
             self.serial = subprocess.Popen([self.elf_file], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
@@ -114,7 +123,10 @@ class Monitor():
         self.serial_handler = SerialHandler("", self.log_handler, target_os, self.elf_file)
 
         self.console_parser = ConsoleParser(eol)
-        self.console_reader = ConsoleReader(self.event_queue, self.cmd_queue, self.console_parser)
+        if self.no_console:
+            self.console_reader = StdinCmdReader(self.event_queue, self.cmd_queue, self.console_parser)
+        else:
+            self.console_reader = ConsoleReader(self.event_queue, self.cmd_queue, self.console_parser)
 
         # internal state
         self._invoke_processing_last_line_timer = None
@@ -175,14 +187,14 @@ class Monitor():
         elif event_tag == TAG_KEY:
             self.serial_write(data)
         elif event_tag == TAG_SERIAL:
-            if self.logAGG_enabled:            
-                events = self.log_handler.logAGG_parse(data)           
+            if self.logAGG_enabled:
+                events = self.log_handler.logAGG_parse(data)
                 for ev in events:
                     src = 0
                     payload = ''
                     if ev[0] == "raw":
                         _, payload = ev
-                    else: 
+                    else:
                         _, src, payload = ev
                     if not payload:
                         payload_str = ''
@@ -190,7 +202,7 @@ class Monitor():
                         payload_str = payload.decode('utf-8', errors='ignore')
                     self.serial_handler.handle_serial_input(payload_str, self.coredump, src)
             else:
-                payload_str = self.serial_reader.decode(data)              
+                payload_str = self.serial_reader.decode(data)
                 self.serial_handler.handle_serial_input(payload_str, self.coredump)
 
             if self._invoke_processing_last_line_timer is not None:
@@ -207,7 +219,10 @@ class Monitor():
             # the coredump loader uses empty line as a sign for end-of-coredump
             # line is finalized only for non coredump data
         elif event_tag == TAG_SERIAL_FLUSH:
-            self.serial_handler.handle_serial_input(data, self.coredump, True)
+            # Finalize a trailing line that arrived without EOL. pathnum stays 0
+            # (the default-path buffer); the True must bind to finalize_line, not
+            # pathnum — passing it positionally here was the [logAGG] regression.
+            self.serial_handler.handle_serial_input(data, self.coredump, finalize_line=True)
         else:
             raise RuntimeError("Bad event data %r" % ((event_tag, data),))
 
@@ -232,7 +247,10 @@ class SerialMonitor(Monitor):
             if self.debug:
                 hex_str = ' '.join(f'{b:02X}' for b in data_to_send)
                 print(f"[Sent Data (Hex)]: {hex_str}")
-            self.serial_reader.serial.write(data_to_send)
+            serial_obj = getattr(self.serial_reader, "serial", None)
+            if serial_obj is None:
+                return
+            serial_obj.write(data_to_send)
             self.timeout_cnt = 0
         except serial.SerialTimeoutException:
             if not self.timeout_cnt:
@@ -242,6 +260,8 @@ class SerialMonitor(Monitor):
             self.timeout_cnt %= 3
         except serial.SerialException:
             pass  # this shouldn't happen, but sometimes port has closed in serial thread
+        except AttributeError:
+            pass  # serial may be cleared during shutdown in no-console mode
         except UnicodeEncodeError:
             pass  # this can happen if a non-ascii character was passed, ignoring
 
@@ -266,7 +286,6 @@ def main():
     colorama.init()
     parser = get_parser()
     args = parser.parse_args()
-
     if args.decode_coredumps :
         if not args.toolchain_dir:
             print_red("Note: No toolchain_dir specified for decode-coredumps, monitor starts failed!")
@@ -318,7 +337,7 @@ def main():
 
             cls = SerialMonitor
         rom_file = ""
-        monitor = cls(args.port, args.baud,
+        monitor = cls(port, args.baud,
                         timestamps=args.timestamps,
                         elf_file=elf_file,
                         toolchain_path=toolchain_path,
@@ -335,7 +354,9 @@ def main():
                         remote_password=args.remote_password,
                         log_enabled = args.log,
                         log_dir=args.log_dir,
-                        logAGG = args.logAGG)
+                        logAGG = args.logAGG,
+                        no_console=args.no_console,
+                        chip=args.chip)
 
         print_yellow("--- Exit monitor: Ctrl+C ---")
 
@@ -363,19 +384,29 @@ def get_parser():
                         help="Add timestamp for each line. Default is False")
     parser.add_argument("--toolchain-dir", help="Set toolchain dir. If not set, will get from config.")
 
-    parser.add_argument('--reset', action='store_true', 
-                       help='Enable reset mode: Wait 100ms after connection to send "reboot" command, start output only after detecting "ROM:["')
-    parser.add_argument('--debug', action='store_true', 
+    parser.add_argument('--reset', action='store_true',
+                       help='Enable reset mode: send "reboot", if soft reset fails then try hardware reset via DTR/RTS')
+    parser.add_argument('--debug', action='store_true',
                        help='Enable debug mode: Display raw hexadecimal data of sent and received bytes')
     parser.add_argument('--remote-server', type=str, help='remote serial server IP address')
     parser.add_argument('--remote-password', type=str, help='remote serial server validation password')
-    parser.add_argument('--log', action='store_true', 
+    parser.add_argument('--log', action='store_true',
                        help='Enable logging mode: save logs to log file')
     parser.add_argument('--log-dir', type=str, default="",
                        help='Specify the target log file directory, if not, the logs will save to under xxxx_gcc_project when logging enabled')
-    parser.add_argument('--logAGG', nargs='+', 
+    parser.add_argument('--logAGG', nargs='+',
                          help='the logAGG enabled and source marked '
                         )
+    def _chip_arg(value):
+        return _normalize_chip_name(value) or value
+    parser.add_argument('--chip', type=_chip_arg, default=None,
+                        help='Optional IC chip name (case-insensitive). Enables AGG parsing '
+                             '(same as --logAGG) and remaps path tags; --logAGG wins when both '
+                             'are supplied. Pre AGG chips (RTL872xD, RTL8195X, RTL871XB) and unknown '
+                             'chips fall back to Core0/Core1/Core2 tags. '
+                             f'Valid choices: {", ".join(IC_LIST)}')
+    parser.add_argument('--no-console', action='store_true',
+                        help='Disable prompt toolkit TUI and read commands from stdin pipe')
 
     return parser
 

@@ -23,7 +23,15 @@ import re
 from pathlib import Path
 
 current_script_path = Path(__file__).resolve().parent
-remote_service_path = current_script_path.parent.parent / 'RemoteService'
+
+# Define possible target paths
+_possible_paths = [
+    current_script_path.parents[1] / 'RemoteService',
+    *(p / 'tools/ameba/RemoteService' for p in current_script_path.parents)
+]
+
+# Find the first existing path, default to the first one if none found
+remote_service_path = next((p for p in _possible_paths if p.exists()), _possible_paths[0])
 
 RemoteSerial = None
 
@@ -127,6 +135,8 @@ class SerialReader(StoppableThread):
                         break
             except Exception as e:
                 break
+
+        # Reset mode: Try Soft reset first, fallback to hard reset
         if self.reset_mode:
             try:
                 self.event_queue.put((TAG_KEY, 'reboot\r\n'), True) # Send reboot command (manually add \r\n)
@@ -135,19 +145,22 @@ class SerialReader(StoppableThread):
 
             self.data_buffer = b''
             start_time = time.time()
+            hard_reset_done = False
+            reset_success = False
+
             while self.running:
                 try:
                     if RemoteSerial and isinstance(self.serial, RemoteSerial):
                         while self.serial.inWaiting() < 1:
                             time.sleep(0.01)
                             if self.expired(start_time):
-                                raise Exception("Reset expired")
+                                break
                         if self.expired(start_time):
-                            raise Exception("Reset expired")
+                            raise Exception("Reset timeout")
                         data = self.serial.read(self.serial.inWaiting())
                     else:
                         if self.expired(start_time):
-                            raise Exception("Reset expired")
+                            raise Exception("Reset timeout")
                         data = self.serial.read(1)
                         if not data:
                             continue
@@ -160,13 +173,52 @@ class SerialReader(StoppableThread):
 
                     self.data_buffer += data
                     filtered = re.sub(rb'\xff.', b'', self.data_buffer)
-                    if b'reboot' in filtered:
+                    if hard_reset_done:
                         if b'BOOT-I' in filtered:
+                            reset_success = True
+                            break
+                    else:
+                        if b'reboot' in filtered and b'BOOT-I' in filtered:
+                            reset_success = True
                             break
                 except Exception as e:
-                    print_red(f"Failed to reset, pelase reset manually: {str(e)}")
+                    if hard_reset_done:
+                        break
+                    # Soft reset timed out → escalate to hard reset
                     self.data_buffer = b''
-                    break
+                    print_yellow("Hard reset triggered.")
+                    try:
+                        if RemoteSerial and isinstance(self.serial, RemoteSerial):
+                            self.serial.reset_device()
+                        else:
+                            self.serial.setDTR(True)
+                            self.serial.setRTS(True)
+                            time.sleep(0.1)
+                            self.serial.setDTR(False)
+                            self.serial.setRTS(False)
+                        time.sleep(0.1)
+                    except Exception as he:
+                        break
+                    hard_reset_done = True
+                    start_time = time.time()
+
+            if not reset_success:
+                print_red("Failed to reset, please reset manually.")
+                self.data_buffer = b''
+            else:
+                # Flush data captured during the reset phase before entering the
+                # main loop. Fast-boot boards finish their entire boot sequence
+                # during the reset phase; the main loop only checks data_buffer
+                # after new data arrives, which never happens on an already-idle
+                # board, causing the complete log to be silently dropped.
+                if self.data_buffer:
+                    if self.target_keyword in self.data_buffer:
+                        index = self.data_buffer.find(self.target_keyword)
+                        self.event_queue.put((TAG_SERIAL, self.data_buffer[index:]), False)
+                    else:
+                        self.event_queue.put((TAG_SERIAL, self.data_buffer), False)
+                    self.data_buffer = b''
+                    self.start_output = True
 
         while self.running:
             try:
@@ -252,7 +304,7 @@ class SerialReader(StoppableThread):
             # logger.addHandler(file_handler)
         return logger
 
-    def open_serial(self, ):
+    def open_serial(self):
         try:
             if self.remote_server and self.remote_port:
                 # print_yellow(f"Connect to remote serial server: {self.remote_server}:{self.remote_port} (Serial port: {self.port})")
@@ -264,7 +316,8 @@ class SerialReader(StoppableThread):
                         remote_port=self.remote_port,
                         port=self.port,
                         baudrate=self.baud,
-                        logger=self._setup_logger()
+                        logger=self._setup_logger(),
+                        source="monitor"
                 )
                 if self.remote_password:
                     self.serial.validate(self.remote_password)

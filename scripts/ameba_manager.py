@@ -10,6 +10,7 @@ from typing import List, Dict, Callable, Any, Optional
 from enum import IntEnum
 
 from ameba_soc_utils import *
+from ameba_output import is_quiet
 
 __all__ = ['AmebaManager']
 
@@ -337,7 +338,8 @@ class AmebaManager:
         if is_external_app and '-a' not in args and '--app' not in args:
              build_args += ['-a', self.current_dir]
 
-        print(f"Start to build {GREEN}{soc_info['name']}{RESET} ...")
+        if not is_quiet():
+            print(f"Start to build {GREEN}{soc_info['name']}{RESET} ...", flush=True)
         return run_script(self.script_dir, "build.py", build_args)
 
     def op_menuconfig(self, args: List) -> bool:
@@ -391,6 +393,12 @@ class AmebaManager:
                 print(f"{YELLOW}The param '{flag}' will be ignored.{RESET}")
 
         img_dir = self.soc_workdir
+        if '--image-dir' in args:
+            idx = args.index('--image-dir')
+            if idx + 1 < len(args):
+                img_dir = args[idx + 1]
+            else:
+                print(f"{YELLOW}WARNING: '--image-dir' flag is provided but no directory is specified. Default to '{img_dir}'.{RESET}")
         if not img_dir or not os.path.exists(img_dir):
             print(f"{RED}ERROR: Please build before flash.{RESET}")
             return False

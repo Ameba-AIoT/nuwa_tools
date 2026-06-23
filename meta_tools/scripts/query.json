@@ -49,6 +49,10 @@
         "rtl872xd_evb": {
             "chip": "AmebaD",
             "path": "zephyr/boards/arm/rtl872xd_evb"
+        },
+        "rtl8730e_evb": {
+            "chip": "AmebaSmart",
+            "path": "zephyr/boards/realtek/rtl8730e_evb"
         }
     },
     "chips": {
@@ -60,6 +64,9 @@
         },
         "AmebaD": {
             "core": "Cortex-M33"
+        },
+        "AmebaSmart": {
+            "core": "Cortex-A32"
         }
     },
     "compatibilityInfo": [

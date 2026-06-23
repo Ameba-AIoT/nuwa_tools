@@ -14,8 +14,7 @@
 		},
 		{
 			"name": "flash",
-			"script": "scripts/flash/flash.py",
-			"help": "flash image to the board"
+			"help": "flash image to the board (handled by nuwa.py)"
 		},
 		{
 			"name": "monitor",

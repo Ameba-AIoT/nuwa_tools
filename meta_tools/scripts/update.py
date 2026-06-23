@@ -11,25 +11,19 @@ import shutil
 import subprocess
 import sys
 
+import base.rtk_utils as utils
+
 NUWA_SDK_GIT_HOOKS_DIR = 'tools/meta_tools/git_hooks'
 
-CMD_CLEAN_WORKSPACE = "west forall -c 'git reset --hard && git clean -fd'"
-CMD_UPDATE_MANIFEST = 'cd manifests && git pull && cd -'
-CMD_WEST_UPDATE = 'west update -k -r'
-CMD_WEST_LIST = "west list | awk '{print $2}'"
-
-def run_shell_cmd_with_output(cmd):
-    return subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-
 def update_git_hooks():
-    repo_list = run_shell_cmd_with_output(CMD_WEST_LIST)
-    if repo_list.returncode != 0:
+    result = utils.run_west(['list', '--format', '{path}'], capture_output=True, check=False)
+    if result.returncode != 0:
         print("Error: Fail to get west repo list, please check the west environment")
         sys.exit(2)
-    else:
-        pass
 
-    for repo in repo_list.stdout.strip().split('\n'):
+    for repo in result.stdout.strip().split('\n'):
+        if not repo:
+            continue
         target_dir = os.path.join(repo, '.git', 'hooks')
         if os.path.exists(target_dir):
             hooks = glob.glob(NUWA_SDK_GIT_HOOKS_DIR + "/*")
@@ -38,7 +32,7 @@ def update_git_hooks():
                     pass
                 elif os.path.isfile(hook):
                     shutil.copy(hook, target_dir)
-                    os.system("chmod a+x " + os.path.join(target_dir, os.path.basename(hook)))
+                    os.chmod(os.path.join(target_dir, os.path.basename(hook)), 0o755)
                 else:
                     pass
         else:
@@ -55,17 +49,19 @@ def main(argc, argv):
 
     if args.pristine:
         print("Clean workspace...")
-        os.system(CMD_CLEAN_WORKSPACE)
+        try:
+            utils.run_west(["forall", "-c", "git reset --hard && git clean -fd"])
+        except subprocess.CalledProcessError as e:
+            print("Error: Failed to clean workspace:", e)
+            sys.exit(1)
         print("Clean workspace done")
-    else:
-        pass
 
     print("Update manifest...")
-    os.system(CMD_UPDATE_MANIFEST)
+    subprocess.run(["git", "pull"], cwd="manifests", check=True, text=True)
     print("Update manifest done")
 
     print("Update workspace...")
-    os.system(CMD_WEST_UPDATE)
+    utils.run_west(["update", "-k", "-r"])
     print("Update workspace done")
 
     print("Update Git hooks...")
