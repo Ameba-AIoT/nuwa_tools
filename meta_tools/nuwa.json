@@ -32,6 +32,11 @@
 			"help": "set up the SDK workspace"
 		},
 		{
+			"name": "twister",
+			"script": "scripts/twister.py",
+			"help": "run Zephyr twister with Ameba toolchain auto-resolved"
+		},
+		{
 			"name": "update",
 			"script": "scripts/update.py",
 			"help": "update the SDK workspace"

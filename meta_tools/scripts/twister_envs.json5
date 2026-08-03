@@ -1,0 +1,51 @@
+// Declarative test matrix for `./nuwa.py twister --config`.
+// A `common` block of shared CLI flags, plus named `environments`, each one
+// `west twister` invocation. Edit this file to add/change what gets tested —
+// no code change to twister.py needed. See twister.py:dict_to_argv for how
+// fields map to CLI flags.
+//
+// Each environment's "--port"/"--remote-server" are for THIS machine's bench
+// (WSL2, COM ports over Windows). amebag2/amebadplus list base + mcuboot
+// variants together in one -p list: --port auto-shares one DUT id across
+// them (hardwaremap.py::_add_ameba_device), so they safely share one
+// physical port with no -j1.
+//
+// Example patterns (copy into an environment as needed):
+//   "--port": "COM36",                  // for remote testing (WSL2 -> Windows AmebaRemoteService)
+//   "--remote-server": "127.0.0.1",     // for remote testing
+//   "--port": "/dev/z_rtl872xda_evb_0", // pure-Linux host, direct connection, no --remote-server
+//   "--fixture": "gpio_loopback",       // once this bench is wired for it
+//
+// Usage:
+//   ./nuwa.py twister --config                    # run every environment
+//   ./nuwa.py twister --config --env "<name>"      # run just one
+{
+  common: {
+    "--device-testing": true,
+    "--test-config": "zephyr/tests/ameba_test_config.yaml",
+    "--level": "ameba_daily",
+    "-T": ["applications", "zephyr/tests", "zephyr/samples"],
+    //"--retry-failed": 2,
+    //"--retry-build-errors": true,
+  },
+
+  environments: [
+    {
+      name: "amebadplus rtl872xda_evb",
+      "-p": ["rtl872xda_evb", "rtl872xda_evb/rtl8721dx/mcuboot"],
+      "--port": "/dev/z_rtl872xda_evb_0",
+    },
+    {
+      name: "amebag2 rtl8721f_evb",
+      "-p": ["rtl8721f_evb", "rtl8721f_evb/rtl8721f/mcuboot"],
+      "--port": "/dev/z_rtl8721f_evb_0",
+    },
+    {
+      name: "amebasmart rtl8730e_evb",
+      "-p": ["rtl8730e_evb"],
+      "--port": "/dev/z_rtl8730e_evb_0",
+    },
+
+    // New board: add an entry here with its -p list + --port/--remote-server.
+  ],
+}

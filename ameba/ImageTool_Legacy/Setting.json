@@ -1,0 +1,27 @@
+{
+  "Images": [
+    {
+      "ImagePath": "Z:\\nuwa\\build\\images\\bootloader_all.bin",
+      "Enabled": true
+    },
+    {
+      "ImagePath": "Z:\\nuwa\\build\\images\\km0_km4_app.bin",
+      "Enabled": true
+    }
+  ],
+  "Profile": "Z:\\nuwa\\tools\\ameba\\ImageTool_Legacy\\Devices\\Profiles\\AmebaD_FreeRTOS_NOR.rdev",
+  "ComPort": "Prolific PL2303GC USB Serial COM Port (COM5)",
+  "Baudrate": 1500000,
+  "EraseStartAddr": 134217728,
+  "EraseEndAddr": 0,
+  "EraseSizeKB": 4,
+  "ProgramConfig": 0,
+  "BootConfig": 0,
+  "DtrRtsConfig": 0,
+  "SpicAddrMode": 0,
+  "ExpertMode": 0,
+  "SkipFloader": 0,
+  "ReservedPartitions": 4,
+  "FlashProtectionProcess": 0,
+  "HandshakeTimeoutInMillisecond": 200
+}

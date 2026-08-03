@@ -16,13 +16,10 @@ from pathlib import Path
 import base.rtk_utils as utils
 
 NUWA_SDK_QUERY_CFG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'query.json')
-NUWA_SDK_TOOLCHAIN_FILE = os.path.join('modules', 'hal', 'realtek', 'ameba', 'scripts', 'toolchain_db.json')
 NUWA_SDK_DEFAULT_IMAGE_DIR = 'images'
 NUWA_SDK_DEFAULT_BUILD_DIR = 'build'
 NUWA_SDK_SOC_PROJECT_DIR = os.path.join('tools', 'meta_tools', 'scripts', 'soc_project')
 NUWA_SDK_AXF2BIN_SCRIPT = os.path.join('tools', 'scripts', 'axf2bin.py')
-NUWA_SDK_TOOLCHAIN_DEFAULT_PATH_WINDOWS = 'C:\\rtk-toolchain'
-NUWA_SDK_TOOLCHAIN_DEFAULT_PATH_LINUX = os.path.expanduser('~/rtk-toolchain')
 
 GCC_PREFIX = 'arm-none-eabi-'
 GCC_SIZE = GCC_PREFIX + 'size'
@@ -61,10 +58,7 @@ def main(argc, argv):
     parser.add_argument('-i', '--image-dir', help='image output directory')
     parser.add_argument('-c', '--clean', action='store_true', help='clean the build')
 
-    # cmake options passthrough
-    parser.add_argument('remainder', nargs=argparse.REMAINDER, help='cmake options passthrough to west')
-
-    args = parser.parse_args()
+    args, remainder = parser.parse_known_args()
 
     if args.build_dir == None:
         build_dir = NUWA_SDK_DEFAULT_BUILD_DIR
@@ -102,11 +96,6 @@ def main(argc, argv):
     else:
         image_dir = os.path.normcase(args.image_dir)
 
-    if os.name == 'nt':
-        toolchain_dir = Path(NUWA_SDK_TOOLCHAIN_DEFAULT_PATH_WINDOWS)
-    else:
-        toolchain_dir = Path(NUWA_SDK_TOOLCHAIN_DEFAULT_PATH_LINUX)
-
     cfg = None
     if os.path.exists(NUWA_SDK_QUERY_CFG_FILE):
         try:
@@ -119,64 +108,14 @@ def main(argc, argv):
         print('Error: Query configuration file "' + NUWA_SDK_QUERY_CFG_FILE + '" does not exist')
         sys.exit(1)
 
-    chip = None
     # Support board variant
     board = args.board.split("/")[0]
     if board not in cfg['devices'].keys():
         print('Error: Unsupported board "' + args.board + '", valid values: ')
         [print(key) for key in cfg['devices'].keys()]
         sys.exit(1)
-    else:
-        chip = cfg['devices'][board]['chip']
 
-    toolchain_db = None
-    if os.path.exists(NUWA_SDK_TOOLCHAIN_FILE):
-        try:
-            with open(NUWA_SDK_TOOLCHAIN_FILE, 'r') as f:
-                toolchain_db = json.load(f)
-        except Exception:
-            print('Error: Fail to load toolchain configuration file "' + NUWA_SDK_TOOLCHAIN_FILE + '"')
-            sys.exit(2)
-    else:
-        print('Error: Toolchain configuration file "' + NUWA_SDK_TOOLCHAIN_FILE + '" does not exist')
-        sys.exit(1)
-
-    toolchain_id = None
-    for k, v in toolchain_db.items():
-        if isinstance(v, dict):
-            devs = v.get('devices', [])
-            if board in devs:
-                toolchain_id = k
-                break
-
-    if toolchain_id is None:
-        print('Error: Unsupported board "' + board + '" in toolchain file "' + NUWA_SDK_TOOLCHAIN_FILE + '"')
-        sys.exit(1)
-
-    toolchain_major, toolchain_minor = toolchain_id.rsplit('-', 1)
-    toolchain = toolchain_major + '-' + toolchain_minor
-
-    if os.name == 'nt':
-        toolchain_path = toolchain_dir / toolchain / 'mingw32' / 'newlib'
-    else:
-        toolchain_path = toolchain_dir / toolchain / 'linux' / 'newlib'
-
-    if toolchain_path.exists():
-        pass
-    else:
-        print(f"Error: Toolchain '{toolchain_path}' does not exist")
-
-        try:
-            utils.run_west(["realtek", "ameba", "install", "-t", toolchain])
-            print("toolchain install successful")
-        except subprocess.CalledProcessError:
-            print("toolchain install failed")
-            sys.exit(1)
-
-    # Always set toolchain env to ensure the correct versioned path is used,
-    # regardless of any pre-existing values in the shell environment.
-    os.environ['ZEPHYR_TOOLCHAIN_VARIANT'] = 'gnuarmemb'
-    os.environ['GNUARMEMB_TOOLCHAIN_PATH'] = f"{toolchain_path}"
+    utils.set_toolchain_env(board)
 
     west_args = ["build", "-b", args.board, "-d", build_dir]
 
@@ -190,8 +129,8 @@ def main(argc, argv):
 
     west_args.append(source_dir)
 
-    if args.remainder:
-        west_args.extend(args.remainder)
+    if remainder:
+        west_args.extend(remainder)
 
     try:
         utils.run_west(west_args)
@@ -205,8 +144,13 @@ def main(argc, argv):
 
     if board in cfg['devices'].keys():
         if args.sysbuild:
-            shutil.copytree(Path(build_dir) / os.path.basename(source_dir) / 'images', Path(image_dir), dirs_exist_ok=True)
+            # Copy the mcuboot domain (boot.bin) FIRST, then the application
+            # domain LAST so the freshly-built app image wins.  The mcuboot
+            # domain only produces boot.bin; any app.bin left in its images/
+            # dir (e.g. copied there before flashing) is stale and must not
+            # clobber the application domain's freshly-built app.bin.
             shutil.copytree(Path(build_dir) / 'mcuboot' / 'images', Path(image_dir), dirs_exist_ok=True)
+            shutil.copytree(Path(build_dir) / os.path.basename(source_dir) / 'images', Path(image_dir), dirs_exist_ok=True)
         else:
             shutil.copytree(Path(build_dir) / 'images', Path(image_dir), dirs_exist_ok=True)
         print('Image location: ' + os.path.join(os.getcwd(), image_dir))

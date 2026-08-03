@@ -57,8 +57,9 @@ def main(argc, argv):
     parser.add_argument('-p', '--pristine', action='store_true', help='pristine build (remove build dir)')
     parser.add_argument('-g', '--target',
                          help='custom target',
-                         choices=['imgtool_flashloader', 'gen_imgtool_floader', 'gen_submodule_info']
+                         choices=['imgtool_flashloader', 'gen_imgtool_floader', 'gen_submodule_info', 'boot']
                         )
+    parser.add_argument('-k', '--core', help='build the specified core')
     parser.add_argument('-G', '--generator', default='Ninja', help='CMake generator (e.g., Ninja, "Unix Makefiles")')
     parser.add_argument('--daily-build', help='daily build flag')
     parser.add_argument('-gdb', '--gdb', action='store_true', help='gdb')
@@ -68,6 +69,8 @@ def main(argc, argv):
                          help='build.py --new <target_dir> [-a <APP>] (use [-a list-apps] to check available apps)')
     parser.add_argument('-q', '--quiet', action='store_true',
                         help='suppress verbose output; show only [INFOR] lines, errors, and final status')
+    parser.add_argument('--remote-server', type=str, help=argparse.SUPPRESS)
+    parser.add_argument('--image-dir', type=str, default='', help=argparse.SUPPRESS)
 
     args = parser.parse_args()
 
@@ -162,8 +165,14 @@ def main(argc, argv):
             if run_command(cmake_config_cmd) != 0:
                 sys.exit(1)
 
-        mode = 'debug' if args.debug else ''
-        os.system(f'python {gdb_script_dir} {project_dir} {mode}')
+        cmd = [sys.executable, gdb_script_dir, project_dir]
+        if args.debug:
+            cmd.append('debug')
+        if args.remote_server:
+            cmd.extend(["--remote-server", args.remote_server])
+        if args.image_dir:
+            cmd.extend(["--image-dir", args.image_dir])
+        subprocess.run(cmd, check=True)
         return
 
     # --- 5. App Logic (Submodules & Re-configure) ---
@@ -206,7 +215,8 @@ def main(argc, argv):
     # Key: Use 'cmake --build' and '--parallel'
     # This enables automatic parallel compilation regardless of the underlying generator (Ninja/Make)
     build_cmd = f'cmake --build "{build_dir}" --parallel'
-
+    if args.core:
+        build_cmd += f' --target {args.core}'
     if args.target:
         build_cmd += f' --target {args.target}'
 

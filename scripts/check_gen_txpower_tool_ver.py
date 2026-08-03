@@ -9,8 +9,9 @@ soc_to_drv_file = {
     'amebalite':      'autoconf_8720e.h',
     'amebasmart':     'autoconf_8730e.h',
     'amebagreen2':    'autoconf_8721f.h',
-    'amebaL2':        'autoconf_amebax.h',
+
     'RTL8720F':       'autoconf_8720f.h',
+    'RLE1509':        'autoconf_8720f.h',
     'amebapro3':      'autoconf_8721f.h'
 }
 

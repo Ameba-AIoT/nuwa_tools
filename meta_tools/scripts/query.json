@@ -40,15 +40,19 @@
     "devices": {
         "rtl8721f_evb": {
             "chip": "AmebaG2",
-            "path": "zephyr/boards/arm/rtl8721f_evb"
+            "path": "zephyr/boards/realtek/rtl8721f_evb"
         },
-            "rtl872xda_evb": {
+        "rtl872xda_evb": {
             "chip": "AmebaDplus",
-            "path": "zephyr/boards/arm/rtl872xda_evb"
+            "path": "zephyr/boards/realtek/rtl872xda_evb"
+        },
+        "pke8721daf_c13_f10": {
+            "chip": "AmebaDplus",
+            "path": "zephyr/boards/realtek/pke8721daf_c13_f10"
         },
         "rtl872xd_evb": {
             "chip": "AmebaD",
-            "path": "zephyr/boards/arm/rtl872xd_evb"
+            "path": "zephyr/boards/realtek/rtl872xd_evb"
         },
         "rtl8730e_evb": {
             "chip": "AmebaSmart",

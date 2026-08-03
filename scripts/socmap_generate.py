@@ -21,6 +21,7 @@ SOC_MAP = {
     "RTL8721F": "amebagreen2",
     "RTL8710F": "RTL8720F",
     "RTL8720F": "RTL8720F",
+    "RLE1509": "RLE1509",
     "RTL8735C": "amebapro3"
 }
 
