@@ -8,6 +8,9 @@ from pathlib import Path
 NUWA_SDK_VENV_DIR = '.venv'
 NUWA_ZEPHYR_REQUIREMENTS = os.path.join('zephyr', 'scripts', 'requirements.txt')
 NUWA_TOOLS_REQUIREMENTS = os.path.join('tools', 'requirements.txt')
+NUWA_AMEBA_REQUIREMENTS = os.path.join(
+    'modules', 'hal', 'realtek', 'ameba', 'scripts', 'requirements.txt'
+)
 
 NUWA_SDK_QUERY_CFG_FILE = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), '..', 'query.json'
@@ -273,4 +276,21 @@ def check_venv():
                 print("Realtek tools Python dependencies installed successfully.")
             except Exception as e:
                 print("Error: Failed to install Realtek tools Python dependencies.", e)
+                sys.exit(2)
+
+    # Install Ameba image-tool Python dependencies
+    if os.path.exists(NUWA_AMEBA_REQUIREMENTS):
+        if _deps_up_to_date(NUWA_AMEBA_REQUIREMENTS, '.ameba_deps_hash'):
+            print("Ameba image-tool Python dependencies up to date, skipping.")
+        else:
+            try:
+                print("Installing Ameba image-tool Python dependencies...")
+                subprocess.check_call(
+                    [VENV_PYTHON_EXECUTABLE, '-m', 'pip', 'install', '-r', NUWA_AMEBA_REQUIREMENTS],
+                    env=env
+                )
+                _mark_deps_installed(NUWA_AMEBA_REQUIREMENTS, '.ameba_deps_hash')
+                print("Ameba image-tool Python dependencies installed successfully.")
+            except Exception as e:
+                print("Error: Failed to install Ameba image-tool Python dependencies.", e)
                 sys.exit(2)

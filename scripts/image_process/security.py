@@ -493,6 +493,22 @@ class secure_boot():
         # mlen: sizeof(Manifest_TypeDef) - SIGN_MAX_LEN
         # sig: Signature[SIGN_MAX_LEN]
         # print(string_at(sig, sizeof(sig)))
+
+        # HSM delegation: `privkey` is a key spec "rtk_hsm:<name>" (Realtek HSM,
+        # ECDSA SECP256R1 + SHA256).  Sign via the HSM; the private key never
+        # leaves it.  Output format matches the local path below: R_BE||S_BE.
+        from rtk_hsm import is_rtk_hsm_spec, rtk_hsm_sign
+        if is_rtk_hsm_spec(privkey):
+            if self.IsHMAC:
+                print('rtk_hsm: HMAC hash alg not supported (HSM signs ECDSA-SHA256 only)!')
+                return -1
+            msg_bytes = msg if isinstance(msg, bytes) else string_at(addressof(msg), mlen)
+            der = rtk_hsm_sign(privkey, msg_bytes)
+            r, s = decode_dss_signature(der)
+            csize = 32  # SECP256R1
+            memmove(addressof(sig), r.to_bytes(csize, 'big') + s.to_bytes(csize, 'big'), csize * 2)
+            return 0
+
         use_fastecdsa = 0
         if id == Curve.SECP192R1:
             curve = ec.SECP192R1()

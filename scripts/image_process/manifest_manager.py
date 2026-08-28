@@ -16,6 +16,20 @@ from context import Context
 from utility import *
 
 
+def _derive_rtk_hsm_pubkey(priv_spec: str):
+    """Derive (public_key_hex, public_key_hash_hex) from an rtk_hsm: spec.
+
+    Fetches the ECDSA SECP256R1 public key (X||Y, 64 bytes) from the Realtek HSM;
+    public_key_hash = SHA256(X||Y), the value burned into OTP for ROM verification.
+    """
+    import hashlib
+    from rtk_hsm import rtk_hsm_get_pubkey
+    pub_bytes = rtk_hsm_get_pubkey(priv_spec)          # X||Y, 64 bytes
+    pub_hex = pub_bytes.hex().upper()
+    pub_hash = hashlib.sha256(pub_bytes).hexdigest().upper()
+    return pub_hex, pub_hash
+
+
 SIGN_MAX_LEN = 144
 PKEY_MAX_LEN = 144
 HASH_MAX_LEN = 64
@@ -186,6 +200,20 @@ class ManifestImageConfig:
             self.sboot_private_key:str = config["sboot_private_key"] if "sboot_private_key" in config else config.get("private_key", "")
             self.sboot_public_key:str = config["sboot_public_key"] if "sboot_public_key" in config else config.get("public_key", "")
             self.sboot_public_key_hash:str = config["sboot_public_key_hash"] if "sboot_public_key_hash" in config else config.get("public_key_hash", "")
+            # rtk_hsm spec: the private key lives in the Realtek HSM, so the manifest
+            # need not carry the public key.  Always derive it (and its hash) from
+            # the HSM; a stale manifest value is overridden, not fatal.
+            from rtk_hsm import is_rtk_hsm_spec
+            if is_rtk_hsm_spec(self.sboot_private_key):
+                derived_pub, derived_hash = _derive_rtk_hsm_pubkey(self.sboot_private_key)
+                if self.sboot_public_key and self.sboot_public_key.upper() != derived_pub.upper():
+                    print(
+                        "rtk_hsm: sboot_public_key in manifest does not match the HSM key "
+                        f"resolved from '{self.sboot_private_key}', ignoring manifest value.\n"
+                        f"  manifest : {self.sboot_public_key}\n"
+                        f"  HSM      : {derived_pub}")
+                self.sboot_public_key = derived_pub
+                self.sboot_public_key_hash = derived_hash
 
         #PQC Support (for image2 when version >= 2)
         if "sboot_pqc_algorithm" in config:

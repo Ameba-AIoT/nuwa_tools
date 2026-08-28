@@ -203,6 +203,10 @@ FLASH_SCRIPT   = fmt_path(os.path.join(GNU_SCRIPT, 'rtl_gdb_flash_write.txt'))
 DEBUG_SCRIPT   = fmt_path(os.path.join(GNU_SCRIPT, 'rtl_gdb_debug.txt'))
 ROM_SCRIPT     = fmt_path(os.path.join(GNU_SCRIPT, 'rtl_gdb_jtag_load_rom.txt'))
 CMAKE_GDB      = fmt_path(CMAKE_GDB)
+# Flash mode: use --batch to prevent terminal issues and auto-exit
+CMAKE_GDB_FLASH = CMAKE_GDB + ' --batch'
+# Debug mode: no --batch to allow interactive debugging
+CMAKE_GDB_DEBUG = CMAKE_GDB
 
 # debug
 if action == 'debug':
@@ -219,7 +223,7 @@ if action == 'debug':
     ex_commands = "".join(ex_list)
 
     IMAGE_PARENT = fmt_path(os.path.join(BUILD_DIR, f'project_{target_prj}'))     # parent dir of /image
-    cmd = 'cd ' + IMAGE_PARENT + ' && ' + CMAKE_GDB + ex_commands + ' -x ' + DEBUG_SCRIPT
+    cmd = 'cd ' + IMAGE_PARENT + ' && ' + CMAKE_GDB_DEBUG + ex_commands + ' -x ' + DEBUG_SCRIPT
     print(' GDB CMD : ', cmd)
     rc = os.system(cmd)
     sys.exit(rc)
@@ -241,7 +245,7 @@ if FPGA == True:
         ex_list.append(fmt_gdb_arg('ROM_ADDR', file_list[1]))
         ex_commands = "".join(ex_list)
 
-        cmd = 'cd ' + LIB_PARENT +  ' && ' + CMAKE_GDB + ex_commands + ' -x ' + ROM_SCRIPT
+        cmd = 'cd ' + LIB_PARENT +  ' && ' + CMAKE_GDB_FLASH + ex_commands + ' -x ' + ROM_SCRIPT
         print(' GDB CMD : ', cmd)
         os.system(cmd)
 
@@ -290,7 +294,7 @@ if BIN_PATHS.get('DSPFlashSize'):
     ex_list.append(fmt_gdb_arg('BIN_DSP_ALL', BIN_PATHS["DSPFlashSize"]))
 
 ex_cmds = ' '.join(ex_list)
-cmd = 'cd ' + IMAGE_PARENT +  ' && ' + CMAKE_GDB + ' ' + ex_cmds + ' -x ' + FLASH_SCRIPT
+cmd = 'cd ' + IMAGE_PARENT +  ' && ' + CMAKE_GDB_FLASH + ' ' + ex_cmds + ' -x ' + FLASH_SCRIPT
 
 print(' GDB CMD : ', cmd)
 rc = os.system(cmd)

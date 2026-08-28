@@ -25,6 +25,10 @@
     "--test-config": "zephyr/tests/ameba_test_config.yaml",
     "--level": "ameba_daily",
     "-T": ["applications", "zephyr/tests", "zephyr/samples"],
+    // Strip build dir down to logs/.config/CMakeCache after every instance
+    // (pass or fail) to keep twister-out small; also deletes images
+    // (zephyr.elf/bin/hex), so failed builds can't be reflashed afterward.
+    "-M": "all",
     //"--retry-failed": 2,
     //"--retry-build-errors": true,
   },
