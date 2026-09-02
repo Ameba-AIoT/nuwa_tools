@@ -13,6 +13,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import yaml
+
 import base.rtk_utils as utils
 
 NUWA_SDK_QUERY_CFG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'query.json')
@@ -144,13 +146,29 @@ def main(argc, argv):
 
     if board in cfg['devices'].keys():
         if args.sysbuild:
-            # Copy the mcuboot domain (boot.bin) FIRST, then the application
-            # domain LAST so the freshly-built app image wins.  The mcuboot
-            # domain only produces boot.bin; any app.bin left in its images/
-            # dir (e.g. copied there before flashing) is stale and must not
-            # clobber the application domain's freshly-built app.bin.
-            shutil.copytree(Path(build_dir) / 'mcuboot' / 'images', Path(image_dir), dirs_exist_ok=True)
-            shutil.copytree(Path(build_dir) / os.path.basename(source_dir) / 'images', Path(image_dir), dirs_exist_ok=True)
+            # domains.yaml has the authoritative build dir per domain; copy
+            # in flash_order so later domains win on filename collisions.
+            domains_yaml_file = Path(build_dir) / 'domains.yaml'
+            if os.path.exists(domains_yaml_file):
+                try:
+                    with open(domains_yaml_file, 'r') as f:
+                        domains = yaml.safe_load(f)
+                    domain_build_dirs = {d['name']: d['build_dir'] for d in domains['domains']}
+                except:
+                    print('Error: Fail to load domains configuration file "' + str(domains_yaml_file) + '"')
+                    sys.exit(2)
+            else:
+                print('Error: Domains configuration file "' + str(domains_yaml_file) + '" does not exist')
+                sys.exit(1)
+
+            for name in domains.get('flash_order') or domain_build_dirs.keys():
+                domain_dir = domain_build_dirs.get(name)
+                if domain_dir is None:
+                    print('Error: Unknown domain "' + name + '" in flash_order of "' + str(domains_yaml_file) + '"')
+                    sys.exit(2)
+                images_dir = Path(domain_dir) / 'images'
+                if images_dir.exists():
+                    shutil.copytree(images_dir, Path(image_dir), dirs_exist_ok=True)
         else:
             shutil.copytree(Path(build_dir) / 'images', Path(image_dir), dirs_exist_ok=True)
         print('Image location: ' + os.path.join(os.getcwd(), image_dir))
