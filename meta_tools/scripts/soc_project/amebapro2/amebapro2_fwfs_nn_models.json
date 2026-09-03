@@ -4,7 +4,8 @@
 	"PROFILE":["FWFS"],
 	"FWFS":{
 		"files":[
-			"scrfd320p"
+			"scrfd320p",
+			"yolov4_tiny"
 		]
 	},
 	"scrfd320p":{

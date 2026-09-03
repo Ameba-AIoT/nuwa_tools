@@ -413,15 +413,28 @@ def main(argc, argv):
         subprocess.run(cmd, cwd=target_dir)
 
         nn_part = ''
-        if os.path.normpath(args.app) == os.path.normpath(os.path.join('platform', 'samples', 'npu')):
-            npu_model_dir = Path('platform') / 'samples' / 'npu' / 'src' / 'model_binary'
-            npu_models = sorted(npu_model_dir.glob('*.nb'))
-            if not npu_models:
-                print("Error: No NPU model '*.nb' files found in '" + str(npu_model_dir) + "'")
+        # NPU and video share both model binaries and the FWFS manifest.
+        app_path = Path(args.app).resolve()
+        if app_path in (
+            (Path('platform') / 'samples' / 'npu').resolve(),
+            (Path('platform') / 'samples' / 'video').resolve(),
+        ):
+            nn_model_dir = Path('platform') / 'samples' / 'npu' / 'src' / 'model_binary'
+            nn_fwfs_path = os.path.join(NUWA_SDK_SOC_PROJECT_DIR, 'amebapro2', 'amebapro2_fwfs_nn_models.json')
+            with open(nn_fwfs_path, 'r', encoding='utf-8') as config_file:
+                nn_manifest = json.load(config_file)
+            nn_models = [nn_model_dir / nn_manifest[name]['file']
+                         for name in nn_manifest['FWFS']['files']]
+            if not nn_models:
+                print("Error: No NPU models listed in '" + nn_fwfs_path + "'")
                 sys.exit(1)
-            for npu_model in npu_models:
-                shutil.copy(npu_model, target_dir)
-            shutil.copy(os.path.join(NUWA_SDK_SOC_PROJECT_DIR, 'amebapro2', 'amebapro2_fwfs_nn_models.json'), target_dir)
+            for nn_model in nn_models:
+                if not nn_model.is_file():
+                    print("Error: Required NPU model '" + str(nn_model) + "' does not exist")
+                    sys.exit(1)
+            for nn_model in nn_models:
+                shutil.copy(nn_model, target_dir)
+            shutil.copy(nn_fwfs_path, os.path.join(target_dir, 'amebapro2_fwfs_nn_models.json'))
             shutil.copy(os.path.join(NUWA_SDK_SOC_PROJECT_DIR, 'amebapro2', 'amebapro2_nn_model.json'), target_dir)
             subprocess.run([elf2bin, 'convert', 'amebapro2_fwfs_nn_models.json', 'FWFS', 'fwfs_nn_model.bin'], cwd=target_dir)
             subprocess.run([elf2bin, 'convert', 'amebapro2_nn_model.json', 'FIRMWARE', 'nn_model.bin'], cwd=target_dir)
