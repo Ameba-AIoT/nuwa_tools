@@ -777,6 +777,23 @@ class ManifestManager(ABC):
             ret = self.sboot.gen_signature(basic_manifest_part.AuthAlg, private_key, basic_manifest_part.SBPubKey, basic_manifest_part, sizeof(Manifest_TypeDef) - SIGN_MAX_LEN, basic_manifest_part.Signature)
             if ret != 0:
                 return Error(ErrorType.UNKNOWN_ERROR, f"self.sboot gen signature failed: {ret}")
+        elif image_type in ([ImageType.IMAGE1, ImageType.IMAGE2, ImageType.APP_ALL]
+                             if self.context.soc_project == 'RLE1509'
+                             else [ImageType.IMAGE2, ImageType.APP_ALL]):
+            # Always populate the image hash (plain SHA-256) even when secure boot
+            # is disabled, so a boot stage that checks it can reject a flash-corrupted
+            # image. IMAGE2(app) is validated by the bootloader on every SoC that
+            # adopts the always-on hash. IMAGE1(bootloader) is validated by the ROM
+            # only on RLE1509 (ROM still in development), so limit IMG1 hashing to it:
+            # other SoCs run a production mask ROM that would misbehave on a non-0xFF
+            # IMG1 HashAlg when secure boot is off.
+            self.sboot.IsHMAC = 0
+            if self.sboot.gen_hash_id(basic_manifest_part, "sha256") != 0:
+                return Error(ErrorType.UNKNOWN_ERROR, "self.sboot gen hash id failed")
+            hash_file = hash_input_file if hash_input_file else input_file
+            ret = self.sboot.gen_image_hash(hash_file, basic_manifest_part.ImgHash, hash_skip_bytes)
+            if ret != 0:
+                return Error(ErrorType.UNKNOWN_ERROR, f"self.sboot gen image hash failed: {ret}")
 
         # Handle PQC fields for extended manifest
         if use_extended_manifest:
