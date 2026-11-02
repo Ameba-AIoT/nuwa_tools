@@ -32,6 +32,11 @@
 			"help": "set up the SDK workspace"
 		},
 		{
+			"name": "sync-hal",
+			"script": "scripts/sync_hal.py",
+			"help": "(maintainers) sync HAL sources and blobs from a local Ameba SDK"
+		},
+		{
 			"name": "twister",
 			"script": "scripts/twister.py",
 			"help": "run Zephyr twister with Ameba toolchain auto-resolved"

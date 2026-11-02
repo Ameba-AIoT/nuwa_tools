@@ -102,7 +102,8 @@ def resolve_toolchain_path(board):
         toolchain_path = toolchain_dir / toolchain_id / 'mingw32' / 'newlib'
     else:
         toolchain_dir = Path(NUWA_SDK_TOOLCHAIN_DEFAULT_PATH_LINUX)
-        toolchain_path = toolchain_dir / toolchain_id / 'linux' / 'newlib'
+        host = 'darwin' if sys.platform == 'darwin' else 'linux'
+        toolchain_path = toolchain_dir / toolchain_id / host / 'newlib'
 
     if not toolchain_path.exists():
         print(f"Error: Toolchain '{toolchain_path}' does not exist")

@@ -48,6 +48,8 @@
       name: "amebasmart rtl8730e_evb",
       "-p": ["rtl8730e_evb"],
       "--port": "/dev/z_rtl8730e_evb_0",
+      // Bench jumper: PA3<->PA2 (UART0 TX/RX).
+      "--fixture": ["gpio_loopback"],
     },
 
     // New board: add an entry here with its -p list + --port/--remote-server.
